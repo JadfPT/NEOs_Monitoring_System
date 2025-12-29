@@ -369,7 +369,7 @@ def upsert_asteroid(cur, id_internal: int, neo_id: str, spkid: int,
 
 
 def insert_orbit_if_new(cur, orbit_id: str, id_internal: int, cls: str,
-                        epoch_mjd: Optional[float], epoch_cal: Optional[date], equinox: str,
+                        epoch: Optional[float], epoch_mjd: Optional[float], epoch_cal: Optional[date], equinox: str,
                         rms: Optional[float], moid_ld: Optional[float], moid: Optional[float],
                         e: Optional[float], a: Optional[float], q: Optional[float], inc: Optional[float],
                         om: Optional[float], w: Optional[float], ma: Optional[float], ad: Optional[float],
@@ -379,14 +379,68 @@ def insert_orbit_if_new(cur, orbit_id: str, id_internal: int, cls: str,
                         sigma_om: Optional[float], sigma_w: Optional[float], sigma_ma: Optional[float], sigma_ad: Optional[float],
                         sigma_n: Optional[float], sigma_tp: Optional[float], sigma_per: Optional[float]) -> bool:
     cur.execute("SELECT 1 FROM Orbit WHERE id_orbita = ?", orbit_id)
+    epoch_val = epoch if epoch is not None else (epoch_mjd if epoch_mjd is not None else 0.0)
     if cur.fetchone() is not None:
+        cur.execute("""
+            UPDATE Orbit
+            SET epoch = ?,
+                rms = ?,
+                moid_ld = ?,
+                epoch_mjd = ?,
+                epoch_cal = ?,
+                tp = ?,
+                tp_cal = ?,
+                per = ?,
+                per_y = ?,
+                equinox = ?,
+                orbit_uncertainty = NULL,
+                condition_code = NULL,
+                e = ?,
+                a = ?,
+                q = ?,
+                i = ?,
+                om = ?,
+                w = ?,
+                ma = ?,
+                ad = ?,
+                n = ?,
+                moid = ?,
+                sigma_e = ?,
+                sigma_a = ?,
+                sigma_q = ?,
+                sigma_i = ?,
+                sigma_n = ?,
+                sigma_ma = ?,
+                sigma_om = ?,
+                sigma_w = ?,
+                sigma_ad = ?,
+                sigma_tp = ?,
+                sigma_per = ?,
+                id_internal = ?,
+                class = ?
+            WHERE id_orbita = ?;
+        """,
+        epoch_val,
+        rms or 0.0,
+        moid_ld or 0.0,
+        epoch_mjd,
+        epoch_cal,
+        tp or 0.0,
+        tp_cal,
+        per or 0.0,
+        per_y or 0.0,
+        equinox or "J2000",
+        e or 0.0, a or 0.0, q or 0.0, inc or 0.0, om or 0.0, w or 0.0, ma or 0.0,
+        ad or 0.0, n or 0.0, moid or 0.0,
+        sigma_e, sigma_a, sigma_q, sigma_i, sigma_n, sigma_ma, sigma_om, sigma_w, sigma_ad, sigma_tp, sigma_per,
+        id_internal, cls,
+        orbit_id
+        )
         return False
 
     if not cls:
         cls = "NEA"
         upsert_class(cur, cls, "Near Earth Asteroid")
-
-    epoch_val = epoch_mjd if epoch_mjd is not None else 0.0
 
     if tp_cal is None:
         tp_cal = epoch_cal if epoch_cal is not None else date.today()
@@ -523,6 +577,7 @@ def load_neo_csv(conn: pyodbc.Connection, path: str) -> None:
                 else:
                     updated_ast += 1
                 if orbit_id and (row.get("epoch_mjd") or row.get("epoch_cal") or row.get("tp_cal")):
+                    epoch = parse_float(row.get("epoch") or "")
                     epoch_mjd = parse_float(row.get("epoch_mjd") or "")
                     epoch_cal = parse_date(row.get("epoch_cal") or "")
                     equinox = (row.get("equinox") or "J2000").strip()
@@ -557,7 +612,7 @@ def load_neo_csv(conn: pyodbc.Connection, path: str) -> None:
                         tp_cal = epoch_cal if epoch_cal is not None else datetime.today().date()
                     inserted = insert_orbit_if_new(
                         cur, orbit_id, id_internal, cls,
-                        epoch_mjd, epoch_cal, equinox,
+                        epoch, epoch_mjd, epoch_cal, equinox,
                         rms, moid_ld, moid,
                         e, a, q, inc, om, w, ma, ad, n,
                         tp, tp_cal, per, per_y,
