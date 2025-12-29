@@ -1,2 +1,3 @@
-# Ignorar todos os ficheiros CSV (demasiado grandes)
-*.csv
+# Ignorar ficheiros CSV (demasiado grandes)
+neo.csv
+mpcorb.csv

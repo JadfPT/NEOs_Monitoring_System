@@ -1,3 +1,6 @@
 # Ficheiros de configuração local
 loader_config.json
 ultima_configuracao.cfg
+
+# Pasta de cache do Python
+__pycache__/
