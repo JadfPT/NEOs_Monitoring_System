@@ -1,9 +1,23 @@
 import os
 import json
 import csv
+from tkinter import filedialog
 import pyodbc
 from datetime import datetime, date
 from typing import Optional, Dict, Tuple
+from tkinter import Tk
+from tkinter.filedialog import askopenfilename
+
+from mpcorb_loader import load_mpcorb
+
+DEFAULT_NEO_HEADER = [
+    "id", "spkid", "full_name", "pdes", "name", "prefix", "neo", "pha", "h",
+    "diameter", "albedo", "diameter_sigma", "orbit_id", "epoch", "epoch_mjd",
+    "epoch_cal", "equinox", "e", "a", "q", "i", "om", "w", "ma", "ad", "n",
+    "tp", "tp_cal", "per", "per_y", "moid", "moid_ld", "sigma_e", "sigma_a",
+    "sigma_q", "sigma_i", "sigma_om", "sigma_w", "sigma_ma", "sigma_ad",
+    "sigma_n", "sigma_tp", "sigma_per", "class", "rms", "class_description"
+]
 
 # ----------------- Config paths -----------------
 DEFAULT_LOADER_CONFIG = "loader_config.json"
@@ -191,21 +205,91 @@ def parse_date(x: str) -> Optional[date]:
     x = (x or "").strip()
     if x == "" or x.upper() == "NULL":
         return None
+
+    # aceita YYYYMMDD ou YYYYMMDD.xxx
+    if len(x) >= 8 and x[:8].isdigit():
+        try:
+            return datetime.strptime(x[:8], "%Y%m%d").date()
+        except:
+            return None
+
+    # fallback
     for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%Y/%m/%d"):
         try:
             return datetime.strptime(x, fmt).date()
         except:
             pass
+
     return None
 
-def detect_delimiter(path: str) -> str:
-    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+def detect_encoding(path: str) -> str:
+    with open(path, "rb") as f:
+        raw = f.read(4096)
+    if raw.startswith(b"\xff\xfe") or raw.startswith(b"\xfe\xff"):
+        return "utf-16"
+    if raw.startswith(b"\xef\xbb\xbf"):
+        return "utf-8-sig"
+    if b"\x00" in raw:
+        return "utf-16"
+    return "utf-8"
+
+def read_header_line(path: str, encoding: str) -> str:
+    with open(path, "r", encoding=encoding, errors="ignore", newline="") as f:
         for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            return ";" if line.count(";") > line.count(",") else ","
-    return ";"
+            if line.strip():
+                return line.rstrip("\n\r")
+    return ""
+
+def parse_header_fields(header_line: str, delim: str) -> list:
+    return [c.strip().lower().lstrip("\ufeff") for c in header_line.split(delim)]
+
+def detect_delimiter_from_header(path: str, encoding: str) -> Tuple[Optional[str], Optional[list]]:
+    header = read_header_line(path, encoding)
+    if not header:
+        return None, None
+    for delim in ("\t", ";", ",", "|"):
+        cols = parse_header_fields(header, delim)
+        if "id" in cols and "spkid" in cols:
+            return delim, cols
+    return None, None
+
+def detect_delimiter(path: str, encoding: str) -> str:
+    """Tenta detectar o delimitador de forma mais determinística."""
+    with open(path, "r", encoding=encoding, errors="ignore", newline="") as f:
+        lines = [ln.rstrip("\n\r") for ln in f.readlines()[:5] if ln.strip()]
+
+    if not lines:
+        return ";"  # default
+
+    first = lines[0]
+
+    # heurísticas rápidas
+    if ";" in first and first.count(";") >= first.count(","):
+        return ";"
+    if "\t" in first:
+        return "\t"
+    if "," in first:
+        return ","
+
+    # fallback: conta em até 5 linhas
+    joined = "\n".join(lines)
+    counts: Dict[str, int] = {
+        ";": joined.count(";"),
+        ",": joined.count(","),
+        "\t": joined.count("\t"),
+        "|": joined.count("|"),
+    }
+    best = max(counts.items(), key=lambda kv: kv[1])[0]
+    return best or ";"
+
+def normalize_row_keys(row: dict) -> dict:
+    out = {}
+    for k, v in row.items():
+        if k is None:
+            continue
+        nk = str(k).strip().lower().lstrip("\ufeff")  # remove BOM
+        out[nk] = v
+    return out
 
 def get_next_id_internal(cur) -> int:
     cur.execute("SELECT ISNULL(MAX(id_internal), 0) FROM Asteroid;")
@@ -217,7 +301,7 @@ def load_existing_maps(cur) -> Tuple[Dict[str,int], Dict[int,int]]:
     cur.execute("SELECT id_internal, neo_id, spkid FROM Asteroid;")
     for id_internal, neo_id, spkid in cur.fetchall():
         if neo_id is not None:
-            neo_map[str(neo_id)] = int(id_internal)
+            neo_map[str(neo_id).strip().lower()] = int(id_internal)
         if spkid is not None:
             spk_map[int(spkid)] = int(id_internal)
     return neo_map, spk_map
@@ -235,9 +319,11 @@ def upsert_asteroid(cur, id_internal: int, neo_id: str, spkid: int,
                     neo_flag: str, pha_flag: str,
                     diameter: Optional[float], h: float,
                     albedo: Optional[float], diameter_sigma: Optional[float]) -> str:
-    cur.execute("SELECT 1 FROM Asteroid WHERE spkid = ?", spkid)
-    exists = cur.fetchone() is not None
-    if exists:
+
+    # 1) Se já existe por spkid, atualiza esse
+    cur.execute("SELECT id_internal FROM Asteroid WHERE spkid = ?", spkid)
+    row = cur.fetchone()
+    if row:
         cur.execute("""
             UPDATE Asteroid
             SET neo_id = COALESCE(neo_id, ?),
@@ -250,18 +336,37 @@ def upsert_asteroid(cur, id_internal: int, neo_id: str, spkid: int,
              diameter, h, albedo, diameter_sigma,
              spkid)
         return "update"
-    else:
+
+    # 2) Se não existe por spkid, mas já existe por neo_id (UNIQUE), atualiza esse
+    cur.execute("SELECT id_internal FROM Asteroid WHERE neo_id = ?", neo_id)
+    row = cur.fetchone()
+    if row:
         cur.execute("""
-            INSERT INTO Asteroid(
-              id_internal, spkid, full_name, pdes, name, prefix,
-              neo_flag, pha_flag, diameter, absolute_magnitude, albedo, diameter_sigma,
-              created_at, neo_id
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, SYSDATETIME(), ?);
-        """, id_internal, spkid, full_name, pdes, name, prefix,
-             neo_flag, pha_flag, diameter, h, albedo, diameter_sigma,
+            UPDATE Asteroid
+            SET spkid = COALESCE(spkid, ?),
+                full_name = ?, pdes = ?, name = ?, prefix = ?,
+                neo_flag = ?, pha_flag = ?,
+                diameter = ?, absolute_magnitude = ?, albedo = ?, diameter_sigma = ?
+            WHERE neo_id = ?;
+        """, spkid, full_name, pdes, name, prefix,
+             neo_flag, pha_flag,
+             diameter, h, albedo, diameter_sigma,
              neo_id)
-        return "insert"
+        return "update"
+
+    # 3) Inserir novo
+    cur.execute("""
+        INSERT INTO Asteroid(
+          id_internal, spkid, full_name, pdes, name, prefix,
+          neo_flag, pha_flag, diameter, absolute_magnitude, albedo, diameter_sigma,
+          created_at, neo_id
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, SYSDATETIME(), ?);
+    """, id_internal, spkid, full_name, pdes, name, prefix,
+         neo_flag, pha_flag, diameter, h, albedo, diameter_sigma,
+         neo_id)
+    return "insert"
+
 
 def insert_orbit_if_new(cur, orbit_id: str, id_internal: int, cls: str,
                         epoch_mjd: Optional[float], epoch_cal: Optional[date], equinox: str,
@@ -282,6 +387,9 @@ def insert_orbit_if_new(cur, orbit_id: str, id_internal: int, cls: str,
         upsert_class(cur, cls, "Near Earth Asteroid")
 
     epoch_val = epoch_mjd if epoch_mjd is not None else 0.0
+
+    if tp_cal is None:
+        tp_cal = epoch_cal if epoch_cal is not None else date.today()
 
     cur.execute("""
         INSERT INTO Orbit(
@@ -309,8 +417,33 @@ def insert_orbit_if_new(cur, orbit_id: str, id_internal: int, cls: str,
     )
     return True
 
+def pick_csv_file() -> str:
+    root = Tk()
+    root.withdraw()           # não mostrar janela principal
+    root.attributes("-topmost", True)
+    path = askopenfilename(
+        title="Seleciona um ficheiro CSV",
+        filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+    )
+    root.destroy()
+    return path
+
 def load_neo_csv(conn: pyodbc.Connection, path: str) -> None:
-    delim = detect_delimiter(path)
+    encoding = detect_encoding(path)
+    header_line = read_header_line(path, encoding)
+    delim, header_fields = detect_delimiter_from_header(path, encoding)
+    if not header_line:
+        print("[ERRO] CSV vazio ou sem header legivel.")
+        return
+    if not delim:
+        delim = detect_delimiter(path, encoding)
+        header_fields = parse_header_fields(header_line, delim)
+    has_header = True
+    if not header_fields or "id" not in header_fields or "spkid" not in header_fields:
+        has_header = False
+        header_fields = DEFAULT_NEO_HEADER
+        print("[WARN] Header nao identificado. A usar cabecalho pre-definido.")
+        print("[DEBUG] Primeira linha lida:", header_line[:200])
     cur = conn.cursor()
     ensure_reference_data(cur)
 
@@ -320,15 +453,36 @@ def load_neo_csv(conn: pyodbc.Connection, path: str) -> None:
     inserted_ast = updated_ast = inserted_orb = 0
     errors = 0
 
-    with open(path, "r", encoding="utf-8", errors="ignore") as f:
-        reader = csv.DictReader(f, delimiter=delim)
-        for line_no, row in enumerate(reader, start=2):
+    with open(path, "r", encoding=encoding, errors="ignore", newline="") as f:
+        if has_header:
+            for line in f:
+                if line.strip():
+                    break
+            start_line_no = 2
+        else:
+            start_line_no = 1
+        reader = csv.DictReader(f, delimiter=delim, fieldnames=header_fields)
+
+        for line_no, row in enumerate(reader, start=start_line_no):
+            if not isinstance(row, dict):
+                print("DEBUG row type:", type(row), row[:5] if isinstance(row, list) else row)
+                continue
+
+            row = normalize_row_keys(row)
+
             try:
                 neo_id = (row.get("id") or "").strip()
+                neo_key = neo_id.lower()
                 spkid = parse_int(row.get("spkid") or "")
                 orbit_id = (row.get("orbit_id") or "").strip()
 
                 if not neo_id or spkid is None:
+                    print(
+                        "DEBUG missing:",
+                        "neo_id=", neo_id,
+                        "spkid_raw=", row.get("spkid"),
+                        "keys=", list(row.keys())[:10]
+                    )
                     errors += 1
                     log_error(cur, path, line_no, "Asteroid", "Missing id or spkid", str(row))
                     continue
@@ -336,33 +490,28 @@ def load_neo_csv(conn: pyodbc.Connection, path: str) -> None:
                 cls = (row.get("class") or "").strip()
                 cls_desc = (row.get("class_description") or cls).strip()
                 upsert_class(cur, cls, cls_desc)
-
-                if neo_id in neo_map:
-                    id_internal = neo_map[neo_id]
+                if neo_key in neo_map:
+                    id_internal = neo_map[neo_key]
                 elif spkid in spk_map:
                     id_internal = spk_map[spkid]
-                    neo_map[neo_id] = id_internal
+                    neo_map[neo_key] = id_internal
                 else:
                     id_internal = next_id
                     next_id += 1
-                    neo_map[neo_id] = id_internal
+                    neo_map[neo_key] = id_internal
                     spk_map[spkid] = id_internal
-
                 neo_flag = ((row.get("neo") or "N").strip().upper()[:1] or "N")
                 pha_flag = ((row.get("pha") or "N").strip().upper()[:1] or "N")
                 if neo_flag not in ("Y","N"): neo_flag = "N"
                 if pha_flag not in ("Y","N"): pha_flag = "N"
-
                 full_name = (row.get("full_name") or "").strip()[:100]
                 pdes = (row.get("pdes") or "").strip()[:50]
                 name = (row.get("name") or "").strip()[:100] or None
                 prefix = (row.get("prefix") or "").strip()[:10] or ""
-
                 h = parse_float(row.get("h") or "") or 0.0
                 diameter = parse_float(row.get("diameter") or "")
                 albedo = parse_float(row.get("albedo") or "")
                 diameter_sigma = parse_float(row.get("diameter_sigma") or "")
-
                 action = upsert_asteroid(
                     cur, id_internal, neo_id, spkid,
                     full_name, pdes, name, prefix,
@@ -373,32 +522,26 @@ def load_neo_csv(conn: pyodbc.Connection, path: str) -> None:
                     inserted_ast += 1
                 else:
                     updated_ast += 1
-
-                if orbit_id:
+                if orbit_id and (row.get("epoch_mjd") or row.get("epoch_cal") or row.get("tp_cal")):
                     epoch_mjd = parse_float(row.get("epoch_mjd") or "")
                     epoch_cal = parse_date(row.get("epoch_cal") or "")
                     equinox = (row.get("equinox") or "J2000").strip()
-
                     rms = parse_float(row.get("rms") or "")
                     moid_ld = parse_float(row.get("moid_ld") or "")
                     moid = parse_float(row.get("moid") or "")
-
                     e = parse_float(row.get("e") or "")
                     a = parse_float(row.get("a") or "")
                     q = parse_float(row.get("q") or "")
                     inc = parse_float(row.get("i") or "")
-
                     om = parse_float(row.get("om") or "")
                     w = parse_float(row.get("w") or "")
                     ma = parse_float(row.get("ma") or "")
                     ad = parse_float(row.get("ad") or "")
                     n = parse_float(row.get("n") or "")
-
                     tp = parse_float(row.get("tp") or "")
                     tp_cal = parse_date(row.get("tp_cal") or "")
                     per = parse_float(row.get("per") or "")
                     per_y = parse_float(row.get("per_y") or "")
-
                     sigma_e = parse_float(row.get("sigma_e") or "")
                     sigma_a = parse_float(row.get("sigma_a") or "")
                     sigma_q = parse_float(row.get("sigma_q") or "")
@@ -410,7 +553,8 @@ def load_neo_csv(conn: pyodbc.Connection, path: str) -> None:
                     sigma_n = parse_float(row.get("sigma_n") or "")
                     sigma_tp = parse_float(row.get("sigma_tp") or "")
                     sigma_per = parse_float(row.get("sigma_per") or "")
-
+                    if tp_cal is None:
+                        tp_cal = epoch_cal if epoch_cal is not None else datetime.today().date()
                     inserted = insert_orbit_if_new(
                         cur, orbit_id, id_internal, cls,
                         epoch_mjd, epoch_cal, equinox,
@@ -423,11 +567,11 @@ def load_neo_csv(conn: pyodbc.Connection, path: str) -> None:
                     )
                     if inserted:
                         inserted_orb += 1
-
+                        
             except Exception as ex:
                 errors += 1
                 log_error(cur, path, line_no, "Loader", f"Unhandled error: {ex}", str(row))
-
+                
             if (line_no % 1000) == 0:
                 conn.commit()
 
@@ -465,12 +609,17 @@ def test_connection(cfg: dict) -> bool:
     try:
         conn = connect(cfg)
         cur = conn.cursor()
+
         cur.execute("SELECT DB_NAME()")
-        db = cur.fetchone()[0]
+        row = cur.fetchone()
+        db = row[0] if row else "<desconhecida>"
+
         cur.close()
         conn.close()
-        print(f"[OK] Ligação bem-sucedida à BD: {db}")
+
+        print(f"[OK] ligação bem-sucedida à BD: {db}")
         return True
+
     except Exception as ex:
         print(f"[ERRO] Falha na ligação: {ex}")
         return False
@@ -493,7 +642,8 @@ def main():
         if stor_path:
             print(f"4) Tentar usar config do stor ({os.path.basename(stor_path)})")
         print("5) Testar ligação")
-        print("6) Carregar CSV NEO (neo exemplo curto.csv / dataset NEO)")
+        print("6) Carregar CSV NEO (asteroids + orbits)")
+        print("7) Carregar mpcorb.csv (orbits MPC)")
         print("0) Sair")
         op = input("Escolha: ").strip()
 
@@ -538,7 +688,10 @@ def main():
             if not active_cfg:
                 print("[ERRO] Primeiro configura a ligação (opção 1).")
                 continue
-            csv_path = input("Caminho do CSV NEO: ").strip().strip('"')
+            csv_path = pick_csv_file()
+            if not csv_path:
+                print("[INFO] Nenhum ficheiro escolhido.")
+                continue
             if not os.path.isfile(csv_path):
                 print("[ERRO] Ficheiro não existe.")
                 continue
@@ -549,9 +702,13 @@ def main():
                 print("[OK] CSV carregado.")
             finally:
                 conn.close()
-
-        else:
-            print("[ERRO] Opção inválida.")
+        
+        elif op == "7":
+            caminho = pick_csv_file()
+            if not caminho:
+                print("Cancelado.")
+            else:
+                load_mpcorb(caminho)
 
 if __name__ == "__main__":
     main()
