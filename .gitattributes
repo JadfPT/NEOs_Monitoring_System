@@ -1,2 +1,1 @@
-Base[[:space:]]de[[:space:]]Dados/NEOs_database.sql filter=lfs diff=lfs merge=lfs -text
 *.sql filter=lfs diff=lfs merge=lfs -text
