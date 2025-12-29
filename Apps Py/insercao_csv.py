@@ -576,7 +576,7 @@ def load_neo_csv(conn: pyodbc.Connection, path: str) -> None:
                     inserted_ast += 1
                 else:
                     updated_ast += 1
-                if orbit_id and (row.get("epoch_mjd") or row.get("epoch_cal") or row.get("tp_cal")):
+                if orbit_id:
                     epoch = parse_float(row.get("epoch") or "")
                     epoch_mjd = parse_float(row.get("epoch_mjd") or "")
                     epoch_cal = parse_date(row.get("epoch_cal") or "")
