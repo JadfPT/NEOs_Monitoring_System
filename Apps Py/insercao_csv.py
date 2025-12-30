@@ -8,7 +8,7 @@ from typing import Optional, Dict, Tuple
 from tkinter import Tk
 from tkinter.filedialog import askopenfilename
 
-from mpcorb_loader import load_mpcorb
+from mpcorb_loader import load_mpcorb, mpc_packed_to_date, date_to_mjd, mjd_to_date
 
 DEFAULT_NEO_HEADER = [
     "id", "spkid", "full_name", "pdes", "name", "prefix", "neo", "pha", "h",
@@ -17,6 +17,20 @@ DEFAULT_NEO_HEADER = [
     "tp", "tp_cal", "per", "per_y", "moid", "moid_ld", "sigma_e", "sigma_a",
     "sigma_q", "sigma_i", "sigma_om", "sigma_w", "sigma_ma", "sigma_ad",
     "sigma_n", "sigma_tp", "sigma_per", "class", "rms", "class_description"
+]
+DEFAULT_MERGED_HEADER = [
+    "id", "spkid", "full_name", "pdes", "name", "prefix", "neo", "pha", "h",
+    "diameter", "albedo", "diameter_sigma", "orbit_id", "epoch", "epoch_mjd",
+    "epoch_cal", "equinox", "e", "a", "q", "i", "om", "w", "ma", "ad", "n",
+    "tp", "tp_cal", "per", "per_y", "moid", "moid_ld", "sigma_e", "sigma_a",
+    "sigma_q", "sigma_i", "sigma_om", "sigma_w", "sigma_ma", "sigma_ad",
+    "sigma_n", "sigma_tp", "sigma_per", "class", "rms", "class_description",
+    "abs_mag", "slope_param", "epoch_mpc", "mean_anomaly", "arg_perihelion",
+    "long_asc_node", "inclination", "eccentricity", "mean_motion",
+    "semi_major_axis", "uncertainty", "reference", "num_observations",
+    "num_oppositions", "first_obs", "separator", "last_obs", "rms_residual",
+    "coarse_perturbers", "precise_perturbers", "computer", "hex_flags",
+    "designation_full", "last_obs_date", "orbit_type", "is_neo"
 ]
 
 # ----------------- Config paths -----------------
@@ -243,6 +257,21 @@ def read_header_line(path: str, encoding: str) -> str:
 def parse_header_fields(header_line: str, delim: str) -> list:
     return [c.strip().lower().lstrip("\ufeff") for c in header_line.split(delim)]
 
+def ensure_unique_header_fields(fields: list) -> list:
+    counts = {}
+    out = []
+    for c in fields:
+        if c in counts:
+            counts[c] += 1
+            if c == "epoch":
+                out.append("epoch_mpc")
+            else:
+                out.append(f"{c}_dup{counts[c]}")
+        else:
+            counts[c] = 1
+            out.append(c)
+    return out
+
 def detect_delimiter_from_header(path: str, encoding: str) -> Tuple[Optional[str], Optional[list]]:
     header = read_header_line(path, encoding)
     if not header:
@@ -317,7 +346,7 @@ def upsert_class(cur, cls: str, desc: str):
 def upsert_asteroid(cur, id_internal: int, neo_id: str, spkid: int,
                     full_name: str, pdes: str, name: Optional[str], prefix: str,
                     neo_flag: str, pha_flag: str,
-                    diameter: Optional[float], h: float,
+                    diameter: Optional[float], h: Optional[float],
                     albedo: Optional[float], diameter_sigma: Optional[float]) -> str:
 
     # 1) Se já existe por spkid, atualiza esse
@@ -327,9 +356,16 @@ def upsert_asteroid(cur, id_internal: int, neo_id: str, spkid: int,
         cur.execute("""
             UPDATE Asteroid
             SET neo_id = COALESCE(neo_id, ?),
-                full_name = ?, pdes = ?, name = ?, prefix = ?,
-                neo_flag = ?, pha_flag = ?,
-                diameter = ?, absolute_magnitude = ?, albedo = ?, diameter_sigma = ?
+                full_name = CASE WHEN full_name IS NULL OR full_name = '' THEN NULLIF(?, '') ELSE full_name END,
+                pdes = CASE WHEN pdes IS NULL OR pdes = '' THEN NULLIF(?, '') ELSE pdes END,
+                name = CASE WHEN name IS NULL OR name = '' THEN NULLIF(?, '') ELSE name END,
+                prefix = CASE WHEN prefix IS NULL OR prefix = '' THEN COALESCE(NULLIF(?, ''), '') ELSE prefix END,
+                neo_flag = CASE WHEN neo_flag IS NULL OR neo_flag = '' THEN NULLIF(?, '') ELSE neo_flag END,
+                pha_flag = CASE WHEN pha_flag IS NULL OR pha_flag = '' THEN NULLIF(?, '') ELSE pha_flag END,
+                diameter = COALESCE(diameter, ?),
+                absolute_magnitude = COALESCE(absolute_magnitude, ?),
+                albedo = COALESCE(albedo, ?),
+                diameter_sigma = COALESCE(diameter_sigma, ?)
             WHERE spkid = ?;
         """, neo_id, full_name, pdes, name, prefix,
              neo_flag, pha_flag,
@@ -344,9 +380,16 @@ def upsert_asteroid(cur, id_internal: int, neo_id: str, spkid: int,
         cur.execute("""
             UPDATE Asteroid
             SET spkid = COALESCE(spkid, ?),
-                full_name = ?, pdes = ?, name = ?, prefix = ?,
-                neo_flag = ?, pha_flag = ?,
-                diameter = ?, absolute_magnitude = ?, albedo = ?, diameter_sigma = ?
+                full_name = CASE WHEN full_name IS NULL OR full_name = '' THEN NULLIF(?, '') ELSE full_name END,
+                pdes = CASE WHEN pdes IS NULL OR pdes = '' THEN NULLIF(?, '') ELSE pdes END,
+                name = CASE WHEN name IS NULL OR name = '' THEN NULLIF(?, '') ELSE name END,
+                prefix = CASE WHEN prefix IS NULL OR prefix = '' THEN COALESCE(NULLIF(?, ''), '') ELSE prefix END,
+                neo_flag = CASE WHEN neo_flag IS NULL OR neo_flag = '' THEN NULLIF(?, '') ELSE neo_flag END,
+                pha_flag = CASE WHEN pha_flag IS NULL OR pha_flag = '' THEN NULLIF(?, '') ELSE pha_flag END,
+                diameter = COALESCE(diameter, ?),
+                absolute_magnitude = COALESCE(absolute_magnitude, ?),
+                albedo = COALESCE(albedo, ?),
+                diameter_sigma = COALESCE(diameter_sigma, ?)
             WHERE neo_id = ?;
         """, spkid, full_name, pdes, name, prefix,
              neo_flag, pha_flag,
@@ -363,7 +406,7 @@ def upsert_asteroid(cur, id_internal: int, neo_id: str, spkid: int,
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, SYSDATETIME(), ?);
     """, id_internal, spkid, full_name, pdes, name, prefix,
-         neo_flag, pha_flag, diameter, h, albedo, diameter_sigma,
+         neo_flag, pha_flag, diameter, (h if h is not None else 0.0), albedo, diameter_sigma,
          neo_id)
     return "insert"
 
@@ -377,61 +420,69 @@ def insert_orbit_if_new(cur, orbit_id: str, id_internal: int, cls: str,
                         per: Optional[float], per_y: Optional[float],
                         sigma_e: Optional[float], sigma_a: Optional[float], sigma_q: Optional[float], sigma_i: Optional[float],
                         sigma_om: Optional[float], sigma_w: Optional[float], sigma_ma: Optional[float], sigma_ad: Optional[float],
-                        sigma_n: Optional[float], sigma_tp: Optional[float], sigma_per: Optional[float]) -> bool:
-    cur.execute("SELECT 1 FROM Orbit WHERE id_orbita = ?", orbit_id)
-    epoch_val = epoch if epoch is not None else (epoch_mjd if epoch_mjd is not None else 0.0)
-    if cur.fetchone() is not None:
+                        sigma_n: Optional[float], sigma_tp: Optional[float], sigma_per: Optional[float],
+                        orbit_uncertainty: Optional[int], condition_code: Optional[int]) -> bool:
+    cur.execute("SELECT id_internal FROM Orbit WHERE id_orbita = ?", orbit_id)
+    epoch_val = epoch if epoch is not None else (epoch_mjd if epoch_mjd is not None else None)
+    row = cur.fetchone()
+    if row is not None:
+        existing_id = row[0]
+        if existing_id is not None and int(existing_id) != int(id_internal):
+            print(f"[WARN] Orbit id {orbit_id} pertence a id_internal={existing_id}, skip update.")
+            return False
         cur.execute("""
             UPDATE Orbit
-            SET epoch = ?,
-                rms = ?,
-                moid_ld = ?,
-                epoch_mjd = ?,
-                epoch_cal = ?,
-                tp = ?,
-                tp_cal = ?,
-                per = ?,
-                per_y = ?,
-                equinox = ?,
-                orbit_uncertainty = NULL,
-                condition_code = NULL,
-                e = ?,
-                a = ?,
-                q = ?,
-                i = ?,
-                om = ?,
-                w = ?,
-                ma = ?,
-                ad = ?,
-                n = ?,
-                moid = ?,
-                sigma_e = ?,
-                sigma_a = ?,
-                sigma_q = ?,
-                sigma_i = ?,
-                sigma_n = ?,
-                sigma_ma = ?,
-                sigma_om = ?,
-                sigma_w = ?,
-                sigma_ad = ?,
-                sigma_tp = ?,
-                sigma_per = ?,
-                id_internal = ?,
-                class = ?
+            SET epoch = COALESCE(epoch, ?),
+                rms = COALESCE(rms, ?),
+                moid_ld = COALESCE(moid_ld, ?),
+                epoch_mjd = COALESCE(epoch_mjd, ?),
+                epoch_cal = COALESCE(epoch_cal, ?),
+                tp = COALESCE(tp, ?),
+                tp_cal = COALESCE(tp_cal, ?),
+                per = COALESCE(per, ?),
+                per_y = COALESCE(per_y, ?),
+                equinox = CASE WHEN equinox IS NULL OR equinox = '' THEN NULLIF(?, '') ELSE equinox END,
+                orbit_uncertainty = COALESCE(orbit_uncertainty, ?),
+                condition_code = COALESCE(condition_code, ?),
+                e = COALESCE(e, ?),
+                a = COALESCE(a, ?),
+                q = COALESCE(q, ?),
+                i = COALESCE(i, ?),
+                om = COALESCE(om, ?),
+                w = COALESCE(w, ?),
+                ma = COALESCE(ma, ?),
+                ad = COALESCE(ad, ?),
+                n = COALESCE(n, ?),
+                moid = COALESCE(moid, ?),
+                sigma_e = COALESCE(sigma_e, ?),
+                sigma_a = COALESCE(sigma_a, ?),
+                sigma_q = COALESCE(sigma_q, ?),
+                sigma_i = COALESCE(sigma_i, ?),
+                sigma_n = COALESCE(sigma_n, ?),
+                sigma_ma = COALESCE(sigma_ma, ?),
+                sigma_om = COALESCE(sigma_om, ?),
+                sigma_w = COALESCE(sigma_w, ?),
+                sigma_ad = COALESCE(sigma_ad, ?),
+                sigma_tp = COALESCE(sigma_tp, ?),
+                sigma_per = COALESCE(sigma_per, ?),
+                id_internal = COALESCE(id_internal, ?),
+                class = CASE WHEN class IS NULL OR class = '' THEN NULLIF(?, '') ELSE class END
             WHERE id_orbita = ?;
         """,
         epoch_val,
-        rms or 0.0,
-        moid_ld or 0.0,
+        rms,
+        moid_ld,
         epoch_mjd,
         epoch_cal,
-        tp or 0.0,
+        tp,
         tp_cal,
-        per or 0.0,
-        per_y or 0.0,
-        equinox or "J2000",
-        e or 0.0, a or 0.0, q or 0.0, inc or 0.0, om or 0.0, w or 0.0, ma or 0.0,
-        ad or 0.0, n or 0.0, moid or 0.0,
+        per,
+        per_y,
+        equinox,
+        orbit_uncertainty,
+        condition_code,
+        e, a, q, inc, om, w, ma,
+        ad, n, moid,
         sigma_e, sigma_a, sigma_q, sigma_i, sigma_n, sigma_ma, sigma_om, sigma_w, sigma_ad, sigma_tp, sigma_per,
         id_internal, cls,
         orbit_id
@@ -457,14 +508,15 @@ def insert_orbit_if_new(cur, orbit_id: str, id_internal: int, cls: str,
         VALUES (
           ?, ?, ?, ?, ?, ?,
           ?, ?, ?, ?, ?,
-          NULL, NULL,
+          ?, ?,
           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
           ?, ?
         );
     """,
-    orbit_id, epoch_val, rms or 0.0, moid_ld or 0.0, epoch_mjd, epoch_cal,
+    orbit_id, (epoch_val if epoch_val is not None else 0.0), rms or 0.0, moid_ld or 0.0, epoch_mjd, epoch_cal,
     tp or 0.0, tp_cal, per or 0.0, per_y or 0.0, equinox or "J2000",
+    orbit_uncertainty, condition_code,
     e or 0.0, a or 0.0, q or 0.0, inc or 0.0, om or 0.0, w or 0.0, ma or 0.0, ad or 0.0, n or 0.0, moid or 0.0,
     sigma_e, sigma_a, sigma_q, sigma_i, sigma_n, sigma_ma, sigma_om, sigma_w, sigma_ad, sigma_tp, sigma_per,
     id_internal, cls
@@ -498,6 +550,7 @@ def load_neo_csv(conn: pyodbc.Connection, path: str) -> None:
         header_fields = DEFAULT_NEO_HEADER
         print("[WARN] Header nao identificado. A usar cabecalho pre-definido.")
         print("[DEBUG] Primeira linha lida:", header_line[:200])
+    header_fields = ensure_unique_header_fields(header_fields)
     cur = conn.cursor()
     ensure_reference_data(cur)
 
@@ -618,7 +671,8 @@ def load_neo_csv(conn: pyodbc.Connection, path: str) -> None:
                         tp, tp_cal, per, per_y,
                         sigma_e, sigma_a, sigma_q, sigma_i,
                         sigma_om, sigma_w, sigma_ma, sigma_ad,
-                        sigma_n, sigma_tp, sigma_per
+                        sigma_n, sigma_tp, sigma_per,
+                        None, None
                     )
                     if inserted:
                         inserted_orb += 1
@@ -639,6 +693,230 @@ def load_neo_csv(conn: pyodbc.Connection, path: str) -> None:
     print(f"Orbits inseridas:      {inserted_orb}")
     print(f"Erros:                 {errors}")
     print("==========================\n")
+
+def load_neo_mpcorb_csv(conn: pyodbc.Connection, path: str) -> None:
+    encoding = detect_encoding(path)
+    header_line = read_header_line(path, encoding)
+    delim, header_fields = detect_delimiter_from_header(path, encoding)
+    if not header_line:
+        print("[ERRO] CSV vazio ou sem header legivel.")
+        return
+    if not delim:
+        delim = detect_delimiter(path, encoding)
+        header_fields = parse_header_fields(header_line, delim)
+    has_header = True
+    if not header_fields or "id" not in header_fields or "spkid" not in header_fields:
+        has_header = False
+        header_fields = DEFAULT_MERGED_HEADER
+        print("[WARN] Header nao identificado. A usar cabecalho pre-definido.")
+        print("[DEBUG] Primeira linha lida:", header_line[:200])
+    header_fields = ensure_unique_header_fields(header_fields)
+
+    cur = conn.cursor()
+    ensure_reference_data(cur)
+
+    neo_map, spk_map = load_existing_maps(cur)
+    next_id = get_next_id_internal(cur)
+
+    inserted_ast = updated_ast = inserted_orb = 0
+    errors = 0
+    missing_keys = 0
+    error_counts: Dict[str, int] = {}
+    error_samples = []
+
+    with open(path, "r", encoding=encoding, errors="ignore", newline="") as f:
+        if has_header:
+            for line in f:
+                if line.strip():
+                    break
+            start_line_no = 2
+        else:
+            start_line_no = 1
+        reader = csv.DictReader(f, delimiter=delim, fieldnames=header_fields)
+
+        for line_no, row in enumerate(reader, start=start_line_no):
+            if not isinstance(row, dict):
+                continue
+
+            row = normalize_row_keys(row)
+
+            try:
+                neo_id = (row.get("id") or "").strip()
+                neo_key = neo_id.lower()
+                spkid = parse_int(row.get("spkid") or "")
+                orbit_id = (row.get("orbit_id") or "").strip()
+
+                if not neo_id or spkid is None:
+                    missing_keys += 1
+                    log_error(cur, path, line_no, "Asteroid", "Missing id or spkid", str(row))
+                    continue
+
+                cls = (row.get("class") or "").strip()
+                orbit_type = (row.get("orbit_type") or "").strip()
+                if not cls and orbit_type:
+                    cls = orbit_type[:20]
+                cls_desc = (row.get("class_description") or orbit_type or cls).strip()
+                upsert_class(cur, cls, cls_desc)
+
+                if neo_key in neo_map:
+                    id_internal = neo_map[neo_key]
+                elif spkid in spk_map:
+                    id_internal = spk_map[spkid]
+                    neo_map[neo_key] = id_internal
+                else:
+                    id_internal = next_id
+                    next_id += 1
+                    neo_map[neo_key] = id_internal
+                    spk_map[spkid] = id_internal
+
+                neo_flag = ((row.get("neo") or "N").strip().upper()[:1] or "N")
+                pha_flag = ((row.get("pha") or "N").strip().upper()[:1] or "N")
+                if neo_flag not in ("Y", "N"):
+                    neo_flag = "N"
+                if pha_flag not in ("Y", "N"):
+                    pha_flag = "N"
+                full_name = (row.get("full_name") or "").strip()[:100]
+                pdes = (row.get("pdes") or "").strip()[:50]
+                name = (row.get("name") or "").strip()[:100] or None
+                prefix = (row.get("prefix") or "").strip()[:10] or ""
+                h = parse_float(row.get("h") or "")
+                if h is None:
+                    h = parse_float(row.get("abs_mag") or "")
+                diameter = parse_float(row.get("diameter") or "")
+                albedo = parse_float(row.get("albedo") or "")
+                diameter_sigma = parse_float(row.get("diameter_sigma") or "")
+
+                action = upsert_asteroid(
+                    cur, id_internal, neo_id, spkid,
+                    full_name, pdes, name, prefix,
+                    neo_flag, pha_flag,
+                    diameter, h, albedo, diameter_sigma
+                )
+                if action == "insert":
+                    inserted_ast += 1
+                else:
+                    updated_ast += 1
+
+                if orbit_id:
+                    epoch = parse_float(row.get("epoch") or "")
+                    epoch_mjd = parse_float(row.get("epoch_mjd") or "")
+                    epoch_cal = parse_date(row.get("epoch_cal") or "")
+                    equinox = (row.get("equinox") or "J2000").strip()
+
+                    epoch_mpc = (row.get("epoch_mpc") or "").strip()
+                    if not epoch and not epoch_mjd and not epoch_cal and epoch_mpc:
+                        epoch_cal = mpc_packed_to_date(epoch_mpc)
+                        if epoch_cal is not None:
+                            epoch_mjd = date_to_mjd(epoch_cal)
+                            epoch = epoch_mjd + 2400000.5
+
+                    rms = parse_float(row.get("rms") or "")
+                    if rms is None:
+                        rms = parse_float(row.get("rms_residual") or "")
+                    moid_ld = parse_float(row.get("moid_ld") or "")
+                    moid = parse_float(row.get("moid") or "")
+                    e = parse_float(row.get("e") or "")
+                    if e is None:
+                        e = parse_float(row.get("eccentricity") or "")
+                    a = parse_float(row.get("a") or "")
+                    if a is None:
+                        a = parse_float(row.get("semi_major_axis") or "")
+                    q = parse_float(row.get("q") or "")
+                    if q is None and a is not None and e is not None:
+                        q = a * (1.0 - e)
+                    inc = parse_float(row.get("i") or "")
+                    if inc is None:
+                        inc = parse_float(row.get("inclination") or "")
+                    om = parse_float(row.get("om") or "")
+                    if om is None:
+                        om = parse_float(row.get("long_asc_node") or "")
+                    w = parse_float(row.get("w") or "")
+                    if w is None:
+                        w = parse_float(row.get("arg_perihelion") or "")
+                    ma = parse_float(row.get("ma") or "")
+                    if ma is None:
+                        ma = parse_float(row.get("mean_anomaly") or "")
+                    ad = parse_float(row.get("ad") or "")
+                    if ad is None and a is not None and e is not None:
+                        ad = a * (1.0 + e)
+                    n = parse_float(row.get("n") or "")
+                    if n is None:
+                        n = parse_float(row.get("mean_motion") or "")
+                    tp = parse_float(row.get("tp") or "")
+                    tp_cal = parse_date(row.get("tp_cal") or "")
+                    per = parse_float(row.get("per") or "")
+                    per_y = parse_float(row.get("per_y") or "")
+                    if per is None and n:
+                        per = 360.0 / n
+                        per_y = per / 365.25 if per else None
+
+                    if tp is None and epoch and n and ma is not None:
+                        tp_jd = epoch - (ma / n)
+                        tp = tp_jd
+                        tp_mjd = tp_jd - 2400000.5
+                        tp_cal = mjd_to_date(tp_mjd)
+
+                    if tp_cal is None:
+                        tp_cal = epoch_cal if epoch_cal is not None else datetime.today().date()
+
+                    sigma_e = parse_float(row.get("sigma_e") or "")
+                    sigma_a = parse_float(row.get("sigma_a") or "")
+                    sigma_q = parse_float(row.get("sigma_q") or "")
+                    sigma_i = parse_float(row.get("sigma_i") or "")
+                    sigma_om = parse_float(row.get("sigma_om") or "")
+                    sigma_w = parse_float(row.get("sigma_w") or "")
+                    sigma_ma = parse_float(row.get("sigma_ma") or "")
+                    sigma_ad = parse_float(row.get("sigma_ad") or "")
+                    sigma_n = parse_float(row.get("sigma_n") or "")
+                    sigma_tp = parse_float(row.get("sigma_tp") or "")
+                    sigma_per = parse_float(row.get("sigma_per") or "")
+
+                    orbit_uncertainty = parse_int(row.get("uncertainty") or "")
+
+                    inserted = insert_orbit_if_new(
+                        cur, orbit_id, id_internal, cls,
+                        epoch, epoch_mjd, epoch_cal, equinox,
+                        rms, moid_ld, moid,
+                        e, a, q, inc, om, w, ma, ad, n,
+                        tp, tp_cal, per, per_y,
+                        sigma_e, sigma_a, sigma_q, sigma_i,
+                        sigma_om, sigma_w, sigma_ma, sigma_ad,
+                        sigma_n, sigma_tp, sigma_per,
+                        orbit_uncertainty, None
+                    )
+                    if inserted:
+                        inserted_orb += 1
+
+            except Exception as ex:
+                errors += 1
+                msg = str(ex)
+                error_counts[msg] = error_counts.get(msg, 0) + 1
+                if len(error_samples) < 5:
+                    error_samples.append((line_no, row.get("id"), row.get("spkid"), row.get("orbit_id"), msg))
+                log_error(cur, path, line_no, "Loader", f"Unhandled error: {ex}", str(row))
+
+            if (line_no % 1000) == 0:
+                conn.commit()
+
+    conn.commit()
+    cur.close()
+
+    print("\n=== RESULTADO (NEO+MPCORB CSV) ===")
+    print(f"Asteroids inseridos:   {inserted_ast}")
+    print(f"Asteroids atualizados: {updated_ast}")
+    print(f"Orbits inseridas:      {inserted_orb}")
+    print(f"Erros:                 {errors}")
+    print(f"Linhas sem id/spkid:   {missing_keys}")
+    if error_samples:
+        print("Exemplos de erro (linha, id, spkid, orbit_id, erro):")
+        for ln, rid, rspk, rorb, emsg in error_samples:
+            print(f"  {ln} | id={rid} | spkid={rspk} | orbit_id={rorb} | {emsg}")
+    if error_counts:
+        top = sorted(error_counts.items(), key=lambda kv: kv[1], reverse=True)[:5]
+        print("Erros mais frequentes:")
+        for emsg, cnt in top:
+            print(f"  {cnt}x | {emsg}")
+    print("===============================\n")
 
 # ----------------- Menu app -----------------
 def find_stor_cfg_nearby() -> Optional[str]:
@@ -699,6 +977,7 @@ def main():
         print("5) Testar ligação")
         print("6) Carregar CSV NEO (asteroids + orbits)")
         print("7) Carregar mpcorb.csv (orbits MPC)")
+        print("8) Carregar CSV NEO+MPCORB (merged)")
         print("0) Sair")
         op = input("Escolha: ").strip()
 
@@ -764,6 +1043,23 @@ def main():
                 print("Cancelado.")
             else:
                 load_mpcorb(caminho)
+        elif op == "8":
+            if not active_cfg:
+                print("[ERRO] Primeiro configura a liga‡Æo (op‡Æo 1).")
+                continue
+            csv_path = pick_csv_file()
+            if not csv_path:
+                print("[INFO] Nenhum ficheiro escolhido.")
+                continue
+            if not os.path.isfile(csv_path):
+                print("[ERRO] Ficheiro nÆo existe.")
+                continue
+            conn = connect(active_cfg)
+            try:
+                load_neo_mpcorb_csv(conn, csv_path)
+                print("[OK] CSV carregado.")
+            finally:
+                conn.close()
 
 if __name__ == "__main__":
     main()
