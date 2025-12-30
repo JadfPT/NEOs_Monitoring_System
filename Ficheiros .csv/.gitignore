@@ -1,3 +1,5 @@
 # Ignorar ficheiros CSV (demasiado grandes)
 neo.csv
 mpcorb.csv
+mpcorb_index.sqlite
+neo_mpcorb_merged.csv
