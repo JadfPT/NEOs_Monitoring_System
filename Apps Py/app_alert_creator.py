@@ -1,6 +1,8 @@
 import json
 import os
+import threading
 from datetime import datetime
+import uuid
 from typing import Dict, Optional, Tuple
 
 import pyodbc
@@ -148,6 +150,11 @@ def main() -> None:
     ttk.Label(form_frame, text="Criteria").grid(row=1, column=0, sticky="w", padx=6, pady=4)
     ttk.Entry(form_frame, textvariable=var_criteria, width=80).grid(row=1, column=1, columnspan=4, sticky="we", padx=6, pady=4)
 
+    ttk.Label(form_frame, text="Regra").grid(row=4, column=0, sticky="w", padx=6, pady=4)
+    var_rule = tk.StringVar()
+    rule_combo = ttk.Combobox(form_frame, textvariable=var_rule, width=48, state="readonly")
+    rule_combo.grid(row=4, column=1, columnspan=3, sticky="w", padx=6, pady=4)
+
     ttk.Label(form_frame, text="Priority").grid(row=2, column=0, sticky="w", padx=6, pady=4)
     priority_combo = ttk.Combobox(form_frame, textvariable=var_priority, width=18, state="readonly")
     priority_combo.grid(row=2, column=1, sticky="w", padx=6, pady=4)
@@ -202,7 +209,7 @@ def main() -> None:
     }
     for key, (title, width) in headings.items():
         results.heading(key, text=title)
-        results.column(key, width=width, anchor="w")
+        results.column(key, width=width, anchor="w", stretch=False)
     results.grid(row=1, column=0, columnspan=3, sticky="nsew", padx=6, pady=6)
     search_frame.grid_columnconfigure(1, weight=1)
     search_frame.grid_rowconfigure(1, weight=1)
@@ -239,6 +246,16 @@ def main() -> None:
         except Exception as ex:
             messagebox.showerror("Erro", f"Nao foi possivel carregar prioridades/niveis: {ex}")
 
+    def normalize_value(value) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, float):
+            return f"{value:.6g}"
+        text = str(value).strip()
+        if text.upper() == "NULL":
+            return ""
+        return text
+
     def do_search() -> None:
         term = var_search.get().strip()
         if not term:
@@ -255,7 +272,7 @@ def main() -> None:
             sql = (
                 "SELECT TOP 200 id_internal, spkid, full_name, pdes, name, prefix, "
                 "neo_flag, pha_flag, diameter, absolute_magnitude, albedo, diameter_sigma, "
-                "created_at, neo_id "
+                "CONVERT(varchar(19), created_at, 120) AS created_at, neo_id "
                 "FROM Asteroid "
                 "WHERE pdes LIKE ? OR full_name LIKE ? OR name LIKE ? OR neo_id LIKE ?"
             )
@@ -265,7 +282,7 @@ def main() -> None:
             sql += " ORDER BY id_internal DESC"
             cur.execute(sql, params)
             for row in cur.fetchall():
-                results.insert("", "end", values=row)
+                results.insert("", "end", values=[normalize_value(v) for v in row])
             cur.close()
             conn.close()
         except Exception as ex:
@@ -326,10 +343,237 @@ def main() -> None:
     def clear_form() -> None:
         var_criteria.set("")
         var_data_gen.set(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        var_rule.set("")
 
     ttk.Button(form_frame, text="Criar Alert", command=create_alert).grid(row=0, column=4, padx=6, pady=4)
     ttk.Button(form_frame, text="Limpar", command=clear_form).grid(row=3, column=4, padx=6, pady=4)
     ttk.Button(form_frame, text="Atualizar Listas", command=refresh_refs).grid(row=2, column=4, padx=6, pady=4)
+    ttk.Button(form_frame, text="Aplicar Regra", command=lambda: apply_rule()).grid(row=4, column=4, padx=6, pady=4)
+    ttk.Button(form_frame, text="Simular Alertas", command=lambda: open_simulation_dialog()).grid(row=5, column=4, padx=6, pady=6)
+
+    rules = {
+        "High: Close approach <1 LD in 7 days, diameter>10mm": (
+            "Close approach < 1 LD within 7 days (diameter>10mm)",
+            "1 - High",
+            "4 - Critical",
+        ),
+        "High: PHA uncertain (diam>100, rms>0.8, moid_ld<20)": (
+            "PHA uncertain: diameter>10m0, rms>0.8, moid_ld<20",
+            "1 - High",
+            "3 - High",
+        ),
+        "Medium: New large asteroid (diam>500, last month, moid_ld<50)": (
+            "New large asteroid: diameter>50m0m, moid_ld<50, discovered last month",
+            "2 - Medium",
+            "2 - Medium",
+        ),
+        "Medium: Significant change (|Δe|>0.05 OR |Δi|>2)": (
+            "Significant orbital change: |Δe|>0.05 OR |Δi|>2",
+            "2 - Medium",
+            "2 - Medium",
+        ),
+        "Low: Clustered approaches <10 LD in month": (
+            "Clustered close approaches <10 LD in month",
+            "3 - Low",
+            "1 - Low",
+        ),
+        "Low: Anomaly (albedo>0.3, e>0.8, i>70, diam>200)": (
+            "Anomaly: albedo>0.3 AND e>0.8 AND i>70 AND diameter>200m",
+            "3 - Low",
+            "1 - Low",
+        ),
+    }
+    rule_combo["values"] = list(rules.keys())
+
+    def apply_rule() -> None:
+        rule = rules.get(var_rule.get())
+        if not rule:
+            messagebox.showwarning("Regra", "Seleciona uma regra.")
+            return
+        criteria, priority, level = rule
+        var_criteria.set(criteria)
+        if priority in priority_map:
+            var_priority.set(priority)
+        if level in level_map:
+            var_level.set(level)
+
+    def open_simulation_dialog() -> None:
+        dialog = tk.Toplevel(root)
+        dialog.title("Simular Alertas")
+        dialog.transient(root)
+        dialog.grab_set()
+
+        choices = [
+            ("close_7d", "Alta: <1 LD em 7 dias (diametro > 10m)"),
+            ("pha_uncertain", "Alta: PHA incerto (diam>100, rms>0.8, moid_ld<20)"),
+            ("new_large", "Media: novo asteroide grande (diam>500, ultimo mes, moid_ld<50)"),
+            ("significant_change", "Media: mudanca orbital (|Δe|>0.05 ou |Δi|>2)"),
+            ("cluster_month", "Baixa: >5 aproximacoes <10 LD no mesmo mes"),
+            ("anomaly", "Baixa: anomalia (albedo>0.3, e>0.8, i>70, diam>200)"),
+        ]
+        vars_map = {key: tk.BooleanVar(value=True) for key, _ in choices}
+
+        ttk.Label(dialog, text="Seleciona os cenarios a simular:").pack(anchor="w", padx=10, pady=(10, 4))
+        for key, label in choices:
+            ttk.Checkbutton(dialog, text=label, variable=vars_map[key]).pack(anchor="w", padx=12)
+
+        def on_run() -> None:
+            selected = [k for k, _ in choices if vars_map[k].get()]
+            dialog.destroy()
+            if not selected:
+                messagebox.showwarning("Simular", "Seleciona pelo menos um cenario.")
+                return
+            simulate_alerts(selected)
+
+        btns = ttk.Frame(dialog)
+        btns.pack(fill="x", padx=10, pady=10)
+        ttk.Button(btns, text="Simular", command=on_run).pack(side="right")
+        ttk.Button(btns, text="Cancelar", command=dialog.destroy).pack(side="right", padx=(0, 6))
+
+    def simulate_alerts(selected: list[str]) -> None:
+        cfg = read_cfg()
+
+        def worker() -> None:
+            try:
+                conn = connect(cfg)
+                cur = conn.cursor()
+                logs = []
+
+                if "close_7d" in selected or "cluster_month" in selected:
+                    cur.execute("""
+                        SELECT TOP 1 id_internal
+                        FROM Asteroid
+                        WHERE diameter IS NOT NULL AND diameter > 0.01
+                        ORDER BY diameter DESC;
+                    """)
+                    row = cur.fetchone()
+                    if not row:
+                        raise RuntimeError("Nao encontrei asteroide com diametro > 10.")
+                    base_id = int(row[0])
+
+                if "close_7d" in selected:
+                    cur.execute("SELECT ISNULL(MAX(id_ca), 0) + 1 FROM Close_Approach;")
+                    id_ca = int(cur.fetchone()[0])
+                    cur.execute(
+                        "INSERT INTO Close_Approach (id_ca, approach_date, rel_velocity_kms, dist_ld, id_internal) "
+                        "VALUES (?, DATEADD(DAY, 3, CAST(GETDATE() AS date)), 12.3, 0.5, ?)",
+                        id_ca,
+                        base_id,
+                    )
+                    logs.append("Simulado: aproximacao <1 LD em 7 dias.")
+
+                if "cluster_month" in selected:
+                    cur.execute("SELECT ISNULL(MAX(id_ca), 0) FROM Close_Approach;")
+                    base_ca = int(cur.fetchone()[0])
+                    cur.execute("""
+                        WITH nums AS (
+                            SELECT 1 AS n UNION ALL SELECT 2 UNION ALL SELECT 3
+                            UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6
+                        )
+                        INSERT INTO Close_Approach (id_ca, approach_date, rel_velocity_kms, dist_ld, id_internal)
+                        SELECT
+                            ? + n,
+                            DATEADD(DAY, n, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)),
+                            8.5,
+                            5.0,
+                            ?
+                        FROM nums;
+                    """, base_ca, base_id)
+                    logs.append("Simulado: cluster mensal >5 aproximacoes <10 LD.")
+
+                if "pha_uncertain" in selected:
+                    cur.execute("""
+                        SELECT TOP 1 id_internal
+                        FROM Asteroid
+                        WHERE pha_flag = 'Y' AND diameter IS NOT NULL AND diameter > 0.1
+                        ORDER BY diameter DESC;
+                    """)
+                    row = cur.fetchone()
+                    if row:
+                        cur.execute("""
+                            UPDATE TOP (1) Orbit
+                            SET rms = 0.9, moid_ld = 10
+                            WHERE id_internal = ?;
+                        """, int(row[0]))
+                        logs.append("Simulado: PHA incerto (rms>0.8, moid_ld<20).")
+
+                if "new_large" in selected:
+                    cur.execute("""
+                        SELECT TOP 1 id_internal
+                        FROM Asteroid
+                        WHERE diameter IS NOT NULL AND diameter > 0.5
+                          AND created_at >= DATEADD(MONTH, -1, SYSDATETIME())
+                        ORDER BY diameter DESC;
+                    """)
+                    row = cur.fetchone()
+                    if row:
+                        cur.execute("""
+                            UPDATE TOP (1) Orbit
+                            SET moid_ld = 30
+                            WHERE id_internal = ?;
+                        """, int(row[0]))
+                        logs.append("Simulado: novo asteroide grande (ultimo mes).")
+
+                if "anomaly" in selected:
+                    cur.execute("""
+                        SELECT TOP 1 id_internal
+                        FROM Asteroid
+                        WHERE diameter IS NOT NULL AND diameter > 0.2
+                          AND albedo IS NOT NULL AND albedo > 0.3
+                        ORDER BY diameter DESC;
+                    """)
+                    row = cur.fetchone()
+                    if row:
+                        cur.execute("""
+                            UPDATE TOP (1) Orbit
+                            SET e = 0.85, i = 75
+                            WHERE id_internal = ?;
+                        """, int(row[0]))
+                        logs.append("Simulado: anomalia (albedo/e/i/diametro).")
+
+                if "significant_change" in selected:
+                    cur.execute("""
+                        SELECT TOP 1 id_internal
+                        FROM Orbit
+                        WHERE id_internal IS NOT NULL
+                        ORDER BY epoch DESC;
+                    """)
+                    row = cur.fetchone()
+                    if row:
+                        orb_id = int(row[0])
+                        new_id = f"SIM_{uuid.uuid4()}"
+                        cur.execute("""
+                            INSERT INTO Orbit (
+                                id_orbita, epoch, rms, moid_ld, epoch_mjd, epoch_cal,
+                                tp, tp_cal, per, per_y, equinox,
+                                orbit_uncertainty, condition_code,
+                                e, a, q, i, om, w, ma, ad, n, moid,
+                                sigma_e, sigma_a, sigma_q, sigma_i, sigma_n, sigma_ma, sigma_om, sigma_w, sigma_ad, sigma_tp, sigma_per,
+                                id_internal, class
+                            )
+                            SELECT
+                                ?, o.epoch + 1, o.rms, o.moid_ld, o.epoch_mjd + 1,
+                                DATEADD(DAY, 1, COALESCE(o.epoch_cal, CAST(GETDATE() AS date))),
+                                o.tp + 1, DATEADD(DAY, 1, COALESCE(o.tp_cal, CAST(GETDATE() AS date))),
+                                o.per, o.per_y, o.equinox,
+                                o.orbit_uncertainty, o.condition_code,
+                                o.e + 0.1, o.a, o.q, o.i + 3, o.om, o.w, o.ma, o.ad, o.n, o.moid,
+                                o.sigma_e, o.sigma_a, o.sigma_q, o.sigma_i, o.sigma_n, o.sigma_ma, o.sigma_om, o.sigma_w, o.sigma_ad, o.sigma_tp, o.sigma_per,
+                                o.id_internal, o.class
+                            FROM Orbit o
+                            WHERE o.id_internal = ?
+                            ORDER BY o.epoch DESC;
+                        """, new_id, orb_id)
+                        logs.append("Simulado: mudanca orbital significativa (novo Orbit).")
+
+                conn.commit()
+                conn.close()
+                msg = "Simulacao concluida:\\n- " + "\\n- ".join(logs) if logs else "Nada foi simulado."
+                messagebox.showinfo("Simular", msg)
+            except Exception as ex:
+                messagebox.showerror("Simular", f"Erro: {ex}")
+
+        threading.Thread(target=worker, daemon=True).start()
 
     cfg = load_config()
     if cfg:

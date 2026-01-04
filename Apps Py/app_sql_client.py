@@ -1084,7 +1084,7 @@ def run_gui() -> None:
     monitor_body = ttk.Frame(monitor_canvas)
     monitor_window = monitor_canvas.create_window((0, 0), window=monitor_body, anchor="nw")
 
-    def _sync_monitor_scroll(event: tk.Event) -> None:
+    def _sync_monitor_scroll(_event: tk.Event) -> None:
         monitor_canvas.configure(scrollregion=monitor_canvas.bbox("all"))
 
     def _sync_monitor_width(event: tk.Event) -> None:
@@ -1104,6 +1104,11 @@ def run_gui() -> None:
     var_orbit = tk.StringVar(value="-")
     var_alert = tk.StringVar(value="-")
     var_high = tk.StringVar(value="-")
+    var_red = tk.StringVar(value="-")
+    var_orange = tk.StringVar(value="-")
+    var_pha_over = tk.StringVar(value="-")
+    var_new_neos = tk.StringVar(value="-")
+    var_next_critical = tk.StringVar(value="-")
     monitor_status_var = tk.StringVar(value="")
 
     ttk.Label(stats_frame, text="Asteroides:").grid(row=0, column=0, sticky="w", padx=6, pady=2)
@@ -1114,8 +1119,18 @@ def run_gui() -> None:
     ttk.Label(stats_frame, textvariable=var_alert).grid(row=1, column=1, sticky="w", padx=6, pady=2)
     ttk.Label(stats_frame, text="Alertas High:").grid(row=1, column=2, sticky="w", padx=6, pady=2)
     ttk.Label(stats_frame, textvariable=var_high).grid(row=1, column=3, sticky="w", padx=6, pady=2)
-    ttk.Label(stats_frame, text="Estado:").grid(row=2, column=0, sticky="w", padx=6, pady=2)
-    ttk.Label(stats_frame, textvariable=monitor_status_var).grid(row=2, column=1, columnspan=3, sticky="w", padx=6, pady=2)
+    ttk.Label(stats_frame, text="Alertas Vermelhos:").grid(row=2, column=0, sticky="w", padx=6, pady=2)
+    ttk.Label(stats_frame, textvariable=var_red).grid(row=2, column=1, sticky="w", padx=6, pady=2)
+    ttk.Label(stats_frame, text="Alertas Laranja:").grid(row=2, column=2, sticky="w", padx=6, pady=2)
+    ttk.Label(stats_frame, textvariable=var_orange).grid(row=2, column=3, sticky="w", padx=6, pady=2)
+    ttk.Label(stats_frame, text="PHAs > 100m:").grid(row=3, column=0, sticky="w", padx=6, pady=2)
+    ttk.Label(stats_frame, textvariable=var_pha_over).grid(row=3, column=1, sticky="w", padx=6, pady=2)
+    ttk.Label(stats_frame, text="Novos NEOs (ultimo mes):").grid(row=3, column=2, sticky="w", padx=6, pady=2)
+    ttk.Label(stats_frame, textvariable=var_new_neos).grid(row=3, column=3, sticky="w", padx=6, pady=2)
+    ttk.Label(stats_frame, text="Proximo Evento <5 LD:").grid(row=4, column=0, sticky="w", padx=6, pady=2)
+    ttk.Label(stats_frame, textvariable=var_next_critical).grid(row=4, column=1, sticky="w", padx=6, pady=2)
+    ttk.Label(stats_frame, text="Estado:").grid(row=4, column=2, sticky="w", padx=6, pady=2)
+    ttk.Label(stats_frame, textvariable=monitor_status_var).grid(row=4, column=3, sticky="w", padx=6, pady=2)
     stats_frame.grid_columnconfigure(4, weight=1)
 
     trend_frame = ttk.LabelFrame(monitor_body, text="Tendencias")
@@ -1149,12 +1164,7 @@ def run_gui() -> None:
     discovery_box.grid(row=0, column=1, sticky="nsew", padx=(6, 0), pady=(0, 8))
     latest_box.grid(row=1, column=0, columnspan=2, sticky="nsew")
 
-    precision_tree = ttk.Treeview(
-        precision_box,
-        columns=("year", "count", "avg_rms"),
-        show="headings",
-        height=8,
-    )
+    precision_tree = ttk.Treeview(precision_box, columns=("year", "count", "avg_rms"), show="headings", height=8)
     precision_tree.heading("year", text="Ano")
     precision_tree.heading("count", text="Orbits")
     precision_tree.heading("avg_rms", text="RMS Medio")
@@ -1163,24 +1173,14 @@ def run_gui() -> None:
     precision_tree.column("avg_rms", width=120, anchor="w")
     precision_tree.pack(fill="x", padx=6, pady=6)
 
-    discovery_tree = ttk.Treeview(
-        discovery_box,
-        columns=("period", "count"),
-        show="headings",
-        height=8,
-    )
+    discovery_tree = ttk.Treeview(discovery_box, columns=("period", "count"), show="headings", height=8)
     discovery_tree.heading("period", text="Periodo (YYYY-MM)")
     discovery_tree.heading("count", text="Novas Descobertas")
     discovery_tree.column("period", width=120, anchor="w")
     discovery_tree.column("count", width=150, anchor="w")
     discovery_tree.pack(fill="x", padx=6, pady=6)
 
-    latest_tree = ttk.Treeview(
-        latest_box,
-        columns=("id_internal", "full_name", "created_at"),
-        show="headings",
-        height=8,
-    )
+    latest_tree = ttk.Treeview(latest_box, columns=("id_internal", "full_name", "created_at"), show="headings", height=8)
     latest_tree.heading("id_internal", text="ID")
     latest_tree.heading("full_name", text="Nome")
     latest_tree.heading("created_at", text="Criado Em")
@@ -1248,14 +1248,30 @@ def run_gui() -> None:
                 row = cur.fetchone()
                 high_count = int(row[0] if row else 0)
 
+                cur.execute("SELECT red_alerts, orange_alerts FROM vw_Alert_Stats;")
+                row = cur.fetchone()
+                red_count = int(row[0] if row and row[0] is not None else 0)
+                orange_count = int(row[1] if row and row[1] is not None else 0)
+
                 cur.execute("""
-                    SELECT TOP 12
-                        YEAR(epoch_cal) AS yr,
-                        COUNT(*) AS cnt,
-                        AVG(rms) AS avg_rms
-                    FROM Orbit
-                    WHERE epoch_cal IS NOT NULL
-                    GROUP BY YEAR(epoch_cal)
+                    SELECT COUNT(*)
+                    FROM Asteroid
+                    WHERE pha_flag = 'Y' AND diameter IS NOT NULL AND diameter > 0.1;
+                """)
+                row = cur.fetchone()
+                pha_over = int(row[0] if row and row[0] is not None else 0)
+
+                cur.execute("SELECT next_close_approach_date FROM vw_Next_Critical_Event;")
+                row = cur.fetchone()
+                next_critical = row[0] if row else None
+
+                cur.execute("SELECT new_neos_last_month FROM vw_New_NEOs_LastMonth;")
+                row = cur.fetchone()
+                new_neos = int(row[0] if row and row[0] is not None else 0)
+
+                cur.execute("""
+                    SELECT TOP 12 yr, cnt, avg_rms
+                    FROM vw_RMS_Trend
                     ORDER BY yr DESC;
                 """)
                 precision_rows = cur.fetchall()
@@ -1281,28 +1297,48 @@ def run_gui() -> None:
 
                 q_monitor.put((
                     "stats",
-                    (ast_count, orbit_count, alert_count, high_count, precision_rows, discovery_rows, latest_rows),
+                    (ast_count, orbit_count, alert_count, high_count, red_count, orange_count, pha_over, new_neos, next_critical, precision_rows, discovery_rows, latest_rows),
                 ))
             except Exception as ex:
                 q_monitor.put(("error", str(ex)))
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def update_monitor(payload: Tuple[Any, Any, Any, Any, Any, Any, Any]) -> None:
-        ast_count, orbit_count, alert_count, high_count, precision_rows, discovery_rows, latest_rows = payload
+    def update_monitor(payload: Tuple[Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any]) -> None:
+        (
+            ast_count,
+            orbit_count,
+            alert_count,
+            high_count,
+            red_count,
+            orange_count,
+            pha_over,
+            new_neos,
+            next_critical,
+            precision_rows,
+            discovery_rows,
+            latest_rows,
+        ) = payload
         var_ast.set(str(ast_count))
         var_orbit.set(str(orbit_count))
         var_alert.set(str(alert_count))
         var_high.set(str(high_count))
-        monitor_status_var.set("")
+        var_red.set(str(red_count))
+        var_orange.set(str(orange_count))
+        var_pha_over.set(str(pha_over))
+        var_new_neos.set(str(new_neos))
+        if next_critical:
+            var_next_critical.set(
+                next_critical.strftime("%Y-%m-%d") if hasattr(next_critical, "strftime") else str(next_critical)
+            )
+        else:
+            var_next_critical.set("-")
 
         clear_tree(precision_tree)
         precision_labels = []
         precision_vals = []
         for row in precision_rows:
-            yr = row[0]
-            cnt = row[1]
-            avg_rms = row[2]
+            yr, cnt, avg_rms = row
             avg_txt = f"{avg_rms:.4f}" if avg_rms is not None else "-"
             precision_tree.insert("", "end", values=(yr, cnt, avg_txt))
             precision_labels.append(str(yr))
@@ -1318,7 +1354,8 @@ def run_gui() -> None:
 
         clear_tree(latest_tree)
         for row in latest_rows:
-            created_txt = row[2].strftime("%Y-%m-%d %H:%M:%S") if hasattr(row[2], "strftime") else str(row[2])
+            created = row[2]
+            created_txt = created.strftime("%Y-%m-%d") if hasattr(created, "strftime") else str(created)
             latest_tree.insert("", "end", values=(row[0], row[1], created_txt))
 
         trend_cache["precision"] = (list(reversed(precision_labels)), list(reversed(precision_vals)))
@@ -1327,8 +1364,21 @@ def run_gui() -> None:
 
     ttk.Button(mon_top, text="Atualizar Estatisticas", command=refresh_monitor).pack(side="right")
 
+    def poll_monitor_queue() -> None:
+        try:
+            while True:
+                kind, payload = q_monitor.get_nowait()
+                if kind == "stats":
+                    update_monitor(cast(Tuple[Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any], payload))
+                elif kind == "error":
+                    monitor_status_var.set(f"Erro: {payload}")
+        except queue.Empty:
+            pass
+        root.after(200, poll_monitor_queue)
+
     precision_canvas.bind("<Configure>", lambda _e: refresh_charts())
     discovery_canvas.bind("<Configure>", lambda _e: refresh_charts())
+    poll_monitor_queue()
 
     # --- Tab Alertas ---
     filter_frame = ttk.Frame(tab_alert)
@@ -1345,12 +1395,20 @@ def run_gui() -> None:
     level_combo.grid(row=0, column=3, padx=4, pady=4, sticky="w")
     filter_frame.grid_columnconfigure(4, weight=1)
 
+    var_active_only = tk.BooleanVar(value=False)
+    active_check = ttk.Checkbutton(
+        filter_frame,
+        text="Apenas ativos (30 dias)",
+        variable=var_active_only,
+    )
+    active_check.grid(row=1, column=0, sticky="w", padx=4, pady=4)
+
     notify_check = ttk.Checkbutton(
         filter_frame,
         text="Notificar novos alertas de alta prioridade",
         variable=var_notify_high,
     )
-    notify_check.grid(row=1, column=0, columnspan=4, sticky="w", padx=4, pady=4)
+    notify_check.grid(row=1, column=1, columnspan=3, sticky="w", padx=4, pady=4)
 
     alert_tree = ttk.Treeview(
         tab_alert,
@@ -1373,6 +1431,9 @@ def run_gui() -> None:
     alert_scroll = ttk.Scrollbar(tab_alert, orient="vertical", command=alert_tree.yview)
     alert_tree.configure(yscrollcommand=alert_scroll.set)
     alert_scroll.place(in_=alert_tree, relx=1.0, rely=0, relheight=1.0, anchor="ne")
+    alert_scroll_x = ttk.Scrollbar(tab_alert, orient="horizontal", command=alert_tree.xview)
+    alert_tree.configure(xscrollcommand=alert_scroll_x.set)
+    alert_scroll_x.pack(fill="x", padx=10, pady=(0, 6))
 
     alert_log = tk.Text(tab_alert, height=6, wrap="word")
     alert_log.pack(fill="x", padx=10, pady=(0, 10))
@@ -1415,6 +1476,7 @@ def run_gui() -> None:
         cfg = cfg_from_fields()
         priority_id = parse_choice_id(var_priority.get())
         level_id = parse_choice_id(var_level.get())
+        active_only = bool(var_active_only.get())
 
         def worker() -> None:
             try:
@@ -1428,6 +1490,8 @@ def run_gui() -> None:
                 if level_id is not None:
                     where.append("a.id_level = ?")
                     params.append(level_id)
+                if active_only:
+                    where.append("a.data_generation >= DATEADD(DAY, -30, SYSDATETIME())")
                 where_sql = " WHERE " + " AND ".join(where) if where else ""
                 sql = f"""
                     SELECT
@@ -1448,6 +1512,91 @@ def run_gui() -> None:
                 rows = cur.fetchall()
                 conn.close()
                 q_alerts.put(("rows", rows))
+            except Exception as ex:
+                q_alerts.put(("error", [str(ex)]))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def simulate_alerts() -> None:
+        cfg = cfg_from_fields()
+
+        def worker() -> None:
+            try:
+                conn = connect(cfg)
+                cur = conn.cursor()
+
+                cur.execute("""
+                    SELECT TOP 1 id_internal, diameter
+                    FROM Asteroid
+                    WHERE diameter IS NOT NULL AND diameter > 10
+                    ORDER BY diameter DESC;
+                """)
+                row = cur.fetchone()
+                if not row:
+                    q_alerts.put(("error", ["Nao encontrei asteroide com diametro > 10."]))
+                    conn.close()
+                    return
+                id_internal = int(row[0])
+
+                cur.execute("SELECT ISNULL(MAX(id_ca), 0) + 1 FROM Close_Approach;")
+                id_ca = int(cur.fetchone()[0])
+                cur.execute(
+                    "INSERT INTO Close_Approach (id_ca, approach_date, rel_velocity_kms, dist_ld, id_internal) "
+                    "VALUES (?, DATEADD(DAY, 3, CAST(GETDATE() AS date)), 12.3, 0.5, ?)",
+                    id_ca,
+                    id_internal,
+                )
+
+                cur.execute("""
+                    SELECT TOP 1 id_internal
+                    FROM Asteroid
+                    WHERE pha_flag = 'Y' AND diameter IS NOT NULL AND diameter > 0.1
+                    ORDER BY diameter DESC;
+                """)
+                pha_row = cur.fetchone()
+                if pha_row:
+                    pha_id = int(pha_row[0])
+                    cur.execute("""
+                        UPDATE TOP (1) Orbit
+                        SET rms = 0.9, moid_ld = 10
+                        WHERE id_internal = ?;
+                    """, pha_id)
+
+                cur.execute("""
+                    SELECT TOP 1 id_internal
+                    FROM Asteroid
+                    WHERE diameter IS NOT NULL AND diameter > 500
+                      AND created_at >= DATEADD(MONTH, -1, SYSDATETIME())
+                    ORDER BY diameter DESC;
+                """)
+                new_row = cur.fetchone()
+                if new_row:
+                    new_id = int(new_row[0])
+                    cur.execute("""
+                        UPDATE TOP (1) Orbit
+                        SET moid_ld = 30
+                        WHERE id_internal = ?;
+                    """, new_id)
+
+                cur.execute("""
+                    SELECT TOP 1 id_internal
+                    FROM Asteroid
+                    WHERE diameter IS NOT NULL AND diameter > 200
+                      AND albedo IS NOT NULL AND albedo > 0.3
+                    ORDER BY diameter DESC;
+                """)
+                an_row = cur.fetchone()
+                if an_row:
+                    an_id = int(an_row[0])
+                    cur.execute("""
+                        UPDATE TOP (1) Orbit
+                        SET e = 0.85, i = 75
+                        WHERE id_internal = ?;
+                    """, an_id)
+
+                conn.commit()
+                conn.close()
+                q_alerts.put(("log", ["Simulacao concluida. Atualiza a lista de alertas."]))
             except Exception as ex:
                 q_alerts.put(("error", [str(ex)]))
 
@@ -1520,6 +1669,7 @@ def run_gui() -> None:
 
     ttk.Button(filter_frame, text="Atualizar Lista", command=refresh_alerts).grid(row=0, column=4, padx=4, pady=4, sticky="e")
     ttk.Button(filter_frame, text="Carregar Filtros", command=load_filter_options).grid(row=1, column=4, padx=4, pady=4, sticky="e")
+    ttk.Button(filter_frame, text="Simular Alertas", command=simulate_alerts).grid(row=0, column=5, rowspan=2, padx=4, pady=4, sticky="e")
 
     def poll_alert_queue() -> None:
         try:
@@ -1538,6 +1688,8 @@ def run_gui() -> None:
                     log_alert("Notificacoes iniciadas (baseline atual definido).")
                 elif kind == "error":
                     log_alert(f"[ERRO] {payload[0] if payload else ''}")
+                elif kind == "log":
+                    log_alert(payload[0] if payload else "")
         except queue.Empty:
             pass
         root.after(200, poll_alert_queue)
@@ -1566,23 +1718,10 @@ def run_gui() -> None:
             pass
         root.after(200, poll_gen_queue)
 
-    def poll_monitor_queue() -> None:
-        try:
-            while True:
-                kind, payload = q_monitor.get_nowait()
-                if kind == "stats":
-                    update_monitor(cast(Tuple[Any, Any, Any, Any, Any, Any, Any], payload))
-                elif kind == "error":
-                    monitor_status_var.set(f"Erro: {payload}")
-        except queue.Empty:
-            pass
-        root.after(200, poll_monitor_queue)
-
     poll_queue()
     poll_alert_queue()
     schedule_notify()
     poll_gen_queue()
-    poll_monitor_queue()
     root.mainloop()
 
 
