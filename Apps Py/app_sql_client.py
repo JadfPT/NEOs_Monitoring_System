@@ -904,6 +904,16 @@ def run_gui() -> None:
     ttk.Button(btn_frame, text="Guardar Configuracao", command=on_save_cfg).grid(row=0, column=2, padx=4, pady=4)
     set_tabs_enabled(False)
 
+    cfg = load_loader_config(DEFAULT_LOADER_CONFIG)
+    if cfg:
+        var_server.set(cfg.get("server", ""))
+        var_port.set(cfg.get("port", ""))
+        var_user.set(cfg.get("user", "sa"))
+        var_password.set(cfg.get("password", ""))
+        var_database.set(cfg.get("database", "NEOs"))
+        var_notify_high.set(bool(cfg.get("notify_high", False)))
+        set_status("Configuracao carregada.", True)
+
     # --- Tab Atualizar BD ---
     load_top = ttk.Frame(tab_load)
     load_top.pack(fill="x", padx=10, pady=8)
@@ -1065,11 +1075,29 @@ def run_gui() -> None:
     gen_button.configure(command=run_generate_sql)
 
     # --- Tab Monitorizacao ---
-    mon_top = ttk.Frame(tab_monitor)
+    monitor_canvas = tk.Canvas(tab_monitor, highlightthickness=0)
+    monitor_scroll = ttk.Scrollbar(tab_monitor, orient="vertical", command=monitor_canvas.yview)
+    monitor_canvas.configure(yscrollcommand=monitor_scroll.set)
+    monitor_scroll.pack(side="right", fill="y")
+    monitor_canvas.pack(side="left", fill="both", expand=True)
+
+    monitor_body = ttk.Frame(monitor_canvas)
+    monitor_window = monitor_canvas.create_window((0, 0), window=monitor_body, anchor="nw")
+
+    def _sync_monitor_scroll(event: tk.Event) -> None:
+        monitor_canvas.configure(scrollregion=monitor_canvas.bbox("all"))
+
+    def _sync_monitor_width(event: tk.Event) -> None:
+        monitor_canvas.itemconfigure(monitor_window, width=event.width)
+
+    monitor_body.bind("<Configure>", _sync_monitor_scroll)
+    monitor_canvas.bind("<Configure>", _sync_monitor_width)
+
+    mon_top = ttk.Frame(monitor_body)
     mon_top.pack(fill="x", padx=10, pady=8)
     ttk.Label(mon_top, text="Monitorizacao e estatisticas", style="Header.TLabel").pack(side="left")
 
-    stats_frame = ttk.LabelFrame(tab_monitor, text="Resumo geral")
+    stats_frame = ttk.LabelFrame(monitor_body, text="Resumo geral")
     stats_frame.pack(fill="x", padx=10, pady=(0, 8))
 
     var_ast = tk.StringVar(value="-")
@@ -1090,7 +1118,7 @@ def run_gui() -> None:
     ttk.Label(stats_frame, textvariable=monitor_status_var).grid(row=2, column=1, columnspan=3, sticky="w", padx=6, pady=2)
     stats_frame.grid_columnconfigure(4, weight=1)
 
-    trend_frame = ttk.LabelFrame(tab_monitor, text="Tendencias")
+    trend_frame = ttk.LabelFrame(monitor_body, text="Tendencias")
     trend_frame.pack(fill="x", padx=10, pady=(0, 8))
     trend_frame.grid_columnconfigure(0, weight=1, uniform="trend")
     trend_frame.grid_columnconfigure(1, weight=1, uniform="trend")
@@ -1109,7 +1137,7 @@ def run_gui() -> None:
     precision_canvas.grid(row=1, column=0, sticky="we", pady=(6, 0))
     discovery_canvas.grid(row=1, column=0, sticky="we", pady=(6, 0))
 
-    tables_frame = ttk.Frame(tab_monitor)
+    tables_frame = ttk.Frame(monitor_body)
     tables_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
     tables_frame.grid_columnconfigure(0, weight=1, uniform="tbl")
     tables_frame.grid_columnconfigure(1, weight=1, uniform="tbl")
@@ -1326,7 +1354,7 @@ def run_gui() -> None:
 
     alert_tree = ttk.Treeview(
         tab_alert,
-        columns=("id_alert", "data_generation", "priority", "level", "id_internal", "criteria"),
+        columns=("id_alert", "data_generation", "priority", "level", "asteroid", "criteria"),
         show="headings",
         height=12,
     )
@@ -1335,7 +1363,7 @@ def run_gui() -> None:
         ("data_generation", "Data", 160),
         ("priority", "Prioridade", 120),
         ("level", "Nivel", 120),
-        ("id_internal", "Asteroid", 90),
+        ("asteroid", "Asteroid", 240),
         ("criteria", "Criterio", 420),
     ):
         alert_tree.heading(col, text=title)
@@ -1407,11 +1435,12 @@ def run_gui() -> None:
                         a.data_generation,
                         COALESCE(p.name, CONCAT('ID ', a.id_priority)),
                         COALESCE(l.description, CONCAT('ID ', a.id_level)),
-                        a.id_internal,
+                        COALESCE(ast.full_name, CONCAT('ID ', a.id_internal)),
                         a.criteria_trigger
                     FROM Alert a
                     LEFT JOIN Priority p ON p.id_priority = a.id_priority
                     LEFT JOIN Level l ON l.id_level = a.id_level
+                    LEFT JOIN Asteroid ast ON ast.id_internal = a.id_internal
                     {where_sql}
                     ORDER BY a.data_generation DESC;
                 """

@@ -1,0 +1,8 @@
+{
+  "server": "Windows\\SQLEXPRESS",
+  "port": "",
+  "user": "sa",
+  "password": "sa",
+  "database": "NEOs",
+  "notify_high": true
+}
