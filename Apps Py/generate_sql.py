@@ -202,39 +202,32 @@ def build_data_from_csv(path):
         class_map = {}
         neo_map = {}
         spk_map = {}
-        mpc_map = {}
         next_id = 1
         asteroids = {}
         orbits = {}
+        mpc_seq = 1
 
         for row in reader:
             if not isinstance(row, dict):
                 continue
-            neo_id = (row.get("id") or "").strip()
+            neo_id = norm_text(row.get("id"))
             spkid = parse_int(row.get("spkid") or "")
             mpc_des = (row.get("designation") or "").strip()
             mpc_full = (row.get("designation_full") or "").strip()
-            mpc_key = (mpc_full or mpc_des or neo_id).strip().lower()
-
-            if neo_id and spkid is not None:
+            id_internal = None
+            if neo_id:
                 neo_key = neo_id.lower()
                 if neo_key in neo_map:
                     id_internal = neo_map[neo_key]
-                elif spkid in spk_map:
+                elif spkid is not None and spkid in spk_map:
                     id_internal = spk_map[spkid]
                     neo_map[neo_key] = id_internal
                 else:
                     id_internal = next_id
                     next_id += 1
                     neo_map[neo_key] = id_internal
-                    spk_map[spkid] = id_internal
-            else:
-                if mpc_key in mpc_map:
-                    id_internal = mpc_map[mpc_key]
-                else:
-                    id_internal = next_id
-                    next_id += 1
-                    mpc_map[mpc_key] = id_internal
+                    if spkid is not None:
+                        spk_map[spkid] = id_internal
 
             cls = (row.get("class") or "").strip()
             orbit_type = (row.get("orbit_type") or "").strip()
@@ -273,45 +266,45 @@ def build_data_from_csv(path):
             albedo = parse_float(row.get("albedo") or "")
             diameter_sigma = parse_float(row.get("diameter_sigma") or "")
 
-            ast = asteroids.get(id_internal)
-            if ast is None:
-                asteroids[id_internal] = {
-                    "id_internal": id_internal,
-                    "spkid": spkid,
-                    "full_name": full_name,
-                    "pdes": pdes,
-                    "name": name,
-                    "prefix": prefix,
-                    "neo_flag": neo_flag,
-                    "pha_flag": pha_flag,
-                    "diameter": diameter,
-                    "absolute_magnitude": h,
-                    "albedo": albedo,
-                    "diameter_sigma": diameter_sigma,
-                    "neo_id": neo_id,
-                }
-            else:
-                ast["spkid"] = merge_numeric(ast["spkid"], spkid)
-                ast["full_name"] = merge_field(ast["full_name"], full_name)
-                ast["pdes"] = merge_field(ast["pdes"], pdes)
-                ast["name"] = merge_field(ast["name"], name)
-                ast["prefix"] = merge_field(ast["prefix"], prefix)
-                ast["neo_flag"] = merge_field(ast["neo_flag"], neo_flag)
-                ast["pha_flag"] = merge_field(ast["pha_flag"], pha_flag)
-                ast["diameter"] = merge_numeric(ast["diameter"], diameter)
-                ast["absolute_magnitude"] = merge_numeric(ast["absolute_magnitude"], h)
-                ast["albedo"] = merge_numeric(ast["albedo"], albedo)
-                ast["diameter_sigma"] = merge_numeric(ast["diameter_sigma"], diameter_sigma)
-                ast["neo_id"] = merge_field(ast["neo_id"], neo_id)
+            if id_internal is not None:
+                ast = asteroids.get(id_internal)
+                if ast is None:
+                    asteroids[id_internal] = {
+                        "id_internal": id_internal,
+                        "spkid": spkid,
+                        "full_name": full_name,
+                        "pdes": pdes,
+                        "name": name,
+                        "prefix": prefix,
+                        "neo_flag": neo_flag,
+                        "pha_flag": pha_flag,
+                        "diameter": diameter,
+                        "absolute_magnitude": h,
+                        "albedo": albedo,
+                        "diameter_sigma": diameter_sigma,
+                        "neo_id": neo_id,
+                    }
+                else:
+                    ast["spkid"] = merge_numeric(ast["spkid"], spkid)
+                    ast["full_name"] = merge_field(ast["full_name"], full_name)
+                    ast["pdes"] = merge_field(ast["pdes"], pdes)
+                    ast["name"] = merge_field(ast["name"], name)
+                    ast["prefix"] = merge_field(ast["prefix"], prefix)
+                    ast["neo_flag"] = merge_field(ast["neo_flag"], neo_flag)
+                    ast["pha_flag"] = merge_field(ast["pha_flag"], pha_flag)
+                    ast["diameter"] = merge_numeric(ast["diameter"], diameter)
+                    ast["absolute_magnitude"] = merge_numeric(ast["absolute_magnitude"], h)
+                    ast["albedo"] = merge_numeric(ast["albedo"], albedo)
+                    ast["diameter_sigma"] = merge_numeric(ast["diameter_sigma"], diameter_sigma)
+                    ast["neo_id"] = merge_field(ast["neo_id"], neo_id)
 
-            orbit_id = (row.get("orbit_id") or "").strip()
+            orbit_id = norm_text(row.get("orbit_id"))
             if not orbit_id:
-                if mpc_des:
-                    orbit_id = f"MPC:{mpc_des}"
-                elif mpc_full:
-                    orbit_id = f"MPC:{mpc_full}"
-            if not orbit_id:
-                continue
+                while True:
+                    orbit_id = f"MPC{mpc_seq}"
+                    mpc_seq += 1
+                    if orbit_id not in orbits:
+                        break
 
             epoch = parse_float(row.get("epoch") or "")
             epoch_mjd = parse_float(row.get("epoch_mjd") or "")
@@ -431,8 +424,11 @@ def build_data_from_csv(path):
                     "class": cls or "NEA",
                 }
             else:
-                if int(orb["id_internal"]) != int(id_internal):
-                    continue
+                if orb["id_internal"] is None and id_internal is not None:
+                    orb["id_internal"] = id_internal
+                elif id_internal is not None and orb["id_internal"] is not None:
+                    if int(orb["id_internal"]) != int(id_internal):
+                        continue
                 orb["epoch"] = merge_numeric(orb["epoch"], epoch)
                 orb["rms"] = merge_numeric(orb["rms"], rms)
                 orb["moid_ld"] = merge_numeric(orb["moid_ld"], moid_ld)
@@ -560,9 +556,12 @@ def write_sql(template_path, output_path, class_lines, asteroid_lines, orbit_lin
     found = {"asteroid": False, "orbit": False, "class": False}
     out_lines = []
     in_asteroid = False
+    in_orbit = False
     for line in lines:
         if line.strip().startswith("CREATE TABLE [dbo].[Asteroid]"):
             in_asteroid = True
+        if line.strip().startswith("CREATE TABLE [dbo].[Orbit]"):
+            in_orbit = True
         if in_asteroid:
             stripped = line.strip()
             if stripped.startswith("[spkid]") and "NOT NULL" in stripped:
@@ -571,6 +570,12 @@ def write_sql(template_path, output_path, class_lines, asteroid_lines, orbit_lin
                 line = line.replace("NOT NULL", "NULL")
             if stripped == ") ON [PRIMARY]":
                 in_asteroid = False
+        if in_orbit:
+            stripped = line.strip()
+            if stripped.startswith("[id_internal]") and "NOT NULL" in stripped:
+                line = line.replace("NOT NULL", "NULL")
+            if stripped == ") ON [PRIMARY]":
+                in_orbit = False
 
         kind = insert_type(line)
         if kind == "class":
