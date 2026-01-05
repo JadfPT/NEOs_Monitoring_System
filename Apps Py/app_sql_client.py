@@ -2085,6 +2085,7 @@ def run_gui() -> None:
         "vw_Discovery_Trend",
         "vw_Observations_Detail",
         "vw_Alerts_Detail",
+        "vw_Software_Orbit",
     ]
     var_view = tk.StringVar(value=view_names[0])
     ttk.Label(views_controls, text="View:").grid(row=0, column=0, sticky="w", padx=10, pady=8)
