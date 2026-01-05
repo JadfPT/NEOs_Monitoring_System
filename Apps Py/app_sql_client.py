@@ -805,6 +805,12 @@ def run_gui() -> None:
         background=[("active", palette["accent_soft"])],
         foreground=[("active", palette["accent"])],
     )
+    style.configure("NavDisabled.TButton", padding=(12, 8), anchor="w", background="#efe9e1", foreground="#9aa0a6")
+    style.map(
+        "NavDisabled.TButton",
+        background=[("disabled", "#efe9e1")],
+        foreground=[("disabled", "#9aa0a6")],
+    )
     style.configure("TagIdle.TLabel", background=palette["accent_soft"], foreground=palette["accent"], padding=(8, 4))
     style.configure("TagOk.TLabel", background="#e6f4ea", foreground="#1b6b3a", padding=(8, 4))
     style.configure("TagBad.TLabel", background="#fde8e8", foreground="#b42318", padding=(8, 4))
@@ -850,7 +856,7 @@ def run_gui() -> None:
     ttk.Label(header_left, text="NEOs Monitoring System", style="Title.TLabel").pack(anchor="w")
     ttk.Label(
         header_left,
-        text="SQL Client - Gestao, monitorizacao e observacoes",
+        text="SQL Client - Gestão, monitorização e observações",
         style="Subtitle.TLabel",
     ).pack(anchor="w", pady=(2, 0))
 
@@ -935,7 +941,7 @@ def run_gui() -> None:
     conn_form.grid(row=0, column=0, sticky="nsew", padx=(0, 12), pady=6)
     conn_form.columnconfigure(1, weight=1)
 
-    conn_side = ttk.LabelFrame(conn_wrap, text="Estado e Acoes")
+    conn_side = ttk.LabelFrame(conn_wrap, text="Estado e Ações")
     conn_side.grid(row=0, column=1, sticky="nsew", padx=0, pady=6)
     conn_side.columnconfigure(0, weight=1)
 
@@ -989,7 +995,10 @@ def run_gui() -> None:
         notebook.tab(5, state=state)  # Views
         notebook.tab(6, state=state)  # Alertas
         for i in range(2, len(nav_buttons)):
-            nav_buttons[i].configure(state=state)
+            nav_buttons[i].configure(
+                state=state,
+                style="Nav.TButton" if connected else "NavDisabled.TButton",
+            )
 
     def on_test_connection() -> None:
         cfg = cfg_from_fields()
@@ -1072,7 +1081,7 @@ def run_gui() -> None:
     csv_entry = ttk.Entry(load_card, textvariable=var_csv)
     csv_entry.grid(row=0, column=1, sticky="we", padx=10, pady=8)
 
-    load_actions = ttk.LabelFrame(load_wrap, text="Operacoes")
+    load_actions = ttk.LabelFrame(load_wrap, text="Operações")
     load_actions.grid(row=0, column=1, sticky="nsew", pady=6)
     load_actions.columnconfigure(0, weight=1)
 
@@ -1178,7 +1187,7 @@ def run_gui() -> None:
     ttk.Label(gen_card, text="Output SQL:").grid(row=2, column=0, sticky="w", padx=10, pady=8)
     ttk.Entry(gen_card, textvariable=var_output).grid(row=2, column=1, sticky="we", padx=10, pady=8)
 
-    gen_actions = ttk.LabelFrame(gen_wrap, text="Operacoes")
+    gen_actions = ttk.LabelFrame(gen_wrap, text="Operações")
     gen_actions.grid(row=0, column=1, sticky="nsew", pady=6)
     gen_actions.columnconfigure(0, weight=1)
 
@@ -1282,7 +1291,7 @@ def run_gui() -> None:
     tab_observation = ttk.Frame(obs_notebook)
     obs_notebook.add(tab_center, text="Centros")
     obs_notebook.add(tab_equipment, text="Equipamentos")
-    obs_notebook.add(tab_software, text="Software_Obs")
+    obs_notebook.add(tab_software, text="Software")
     obs_notebook.add(tab_astronomer, text="Astrónomos")
     obs_notebook.add(tab_observation, text="Observações")
 
@@ -1423,7 +1432,7 @@ def run_gui() -> None:
     software_layout.columnconfigure(0, weight=1)
     software_layout.columnconfigure(1, weight=2)
 
-    software_form = ttk.LabelFrame(software_layout, text="Novo Software_Obs")
+    software_form = ttk.LabelFrame(software_layout, text="Novo Software")
     software_form.grid(row=0, column=0, sticky="nsew", padx=(0, 12), pady=6)
     software_form.columnconfigure(1, weight=1)
     ttk.Label(software_form, text="Versão:").grid(row=0, column=0, sticky="w", padx=10, pady=8)
@@ -1434,7 +1443,7 @@ def run_gui() -> None:
     software_btns.columnconfigure(0, weight=1)
     software_btns.columnconfigure(1, weight=1)
 
-    software_list = ttk.LabelFrame(software_layout, text="Lista de Software_Obs")
+    software_list = ttk.LabelFrame(software_layout, text="Lista de Software")
     software_list.grid(row=0, column=1, sticky="nsew", pady=6)
     software_tree = ttk.Treeview(software_list, columns=("id_software", "version"), show="headings", height=12)
     apply_tree_stripes(software_tree)
@@ -1465,7 +1474,7 @@ def run_gui() -> None:
     astronomer_form.columnconfigure(1, weight=1)
     ttk.Label(astronomer_form, text="Nome:").grid(row=0, column=0, sticky="w", padx=10, pady=8)
     ttk.Entry(astronomer_form, textvariable=var_astronomer_name).grid(row=0, column=1, sticky="we", padx=10, pady=8)
-    ttk.Label(astronomer_form, text="Afiliacao:").grid(row=1, column=0, sticky="w", padx=10, pady=8)
+    ttk.Label(astronomer_form, text="Afiliação:").grid(row=1, column=0, sticky="w", padx=10, pady=8)
     ttk.Entry(astronomer_form, textvariable=var_astronomer_aff).grid(row=1, column=1, sticky="we", padx=10, pady=8)
 
     astronomer_btns = ttk.Frame(astronomer_form)
@@ -1484,7 +1493,7 @@ def run_gui() -> None:
     apply_tree_stripes(astronomer_tree)
     astronomer_tree.heading("id_astronomer", text="ID")
     astronomer_tree.heading("name", text="Nome")
-    astronomer_tree.heading("affiliation", text="Afiliacao")
+    astronomer_tree.heading("affiliation", text="Afiliação")
     astronomer_tree.column("id_astronomer", width=80, anchor="w")
     astronomer_tree.column("name", width=200, anchor="w")
     astronomer_tree.column("affiliation", width=240, anchor="w")
@@ -1835,7 +1844,7 @@ def run_gui() -> None:
         name = var_astronomer_name.get().strip()
         affiliation = var_astronomer_aff.get().strip()
         if not name or not affiliation:
-            messagebox.showwarning("Astrónomo", "Preenche nome e afiliacao.")
+            messagebox.showwarning("Astrónomo", "Preenche nome e afiliação.")
             return
         cfg = cfg_from_fields()
 
@@ -2131,7 +2140,7 @@ def run_gui() -> None:
     monitor_header = ttk.Frame(tab_monitor)
     monitor_header.pack(fill="x", padx=16, pady=(12, 4))
     ttk.Label(monitor_header, text="Monitorização", style="Section.TLabel").pack(side="left")
-    ttk.Label(monitor_header, text="Indicadores e tendencias", style="Muted.TLabel").pack(side="right")
+    ttk.Label(monitor_header, text="Indicadores e tendências", style="Muted.TLabel").pack(side="right")
 
     monitor_wrap = ttk.Frame(tab_monitor)
     monitor_wrap.pack(fill="both", expand=True, padx=16, pady=(4, 12))
@@ -2189,7 +2198,7 @@ def run_gui() -> None:
     ttk.Label(stats_frame, textvariable=var_orange).grid(row=2, column=3, sticky="w", padx=6, pady=2)
     ttk.Label(stats_frame, text="PHAs > 100m:").grid(row=3, column=0, sticky="w", padx=6, pady=2)
     ttk.Label(stats_frame, textvariable=var_pha_over).grid(row=3, column=1, sticky="w", padx=6, pady=2)
-    ttk.Label(stats_frame, text="Novos NEOs (ultimo mes):").grid(row=3, column=2, sticky="w", padx=6, pady=2)
+    ttk.Label(stats_frame, text="Novos NEOs (ultimo mês):").grid(row=3, column=2, sticky="w", padx=6, pady=2)
     ttk.Label(stats_frame, textvariable=var_new_neos).grid(row=3, column=3, sticky="w", padx=6, pady=2)
     ttk.Label(stats_frame, text="Proximo Evento <5 LD:").grid(row=4, column=0, sticky="w", padx=6, pady=2)
     ttk.Label(stats_frame, textvariable=var_next_critical).grid(row=4, column=1, sticky="w", padx=6, pady=2)
@@ -2197,7 +2206,7 @@ def run_gui() -> None:
     ttk.Label(stats_frame, textvariable=monitor_status_var).grid(row=4, column=3, sticky="w", padx=6, pady=2)
     stats_frame.grid_columnconfigure(4, weight=1)
 
-    trend_frame = ttk.LabelFrame(monitor_body, text="Tendencias")
+    trend_frame = ttk.LabelFrame(monitor_body, text="Tendências")
     trend_frame.pack(fill="x", padx=10, pady=(0, 8))
     trend_frame.grid_columnconfigure(0, weight=1, uniform="trend")
     trend_frame.grid_columnconfigure(1, weight=1, uniform="trend")
@@ -2210,7 +2219,7 @@ def run_gui() -> None:
     discovery_block.grid_columnconfigure(0, weight=1)
 
     ttk.Label(precision_block, text="Precisão orbital (RMS médio por ano)").grid(row=0, column=0, sticky="w")
-    ttk.Label(discovery_block, text="Novas descobertas (por mes)").grid(row=0, column=0, sticky="w")
+    ttk.Label(discovery_block, text="Novas descobertas (por mês)").grid(row=0, column=0, sticky="w")
     precision_canvas = tk.Canvas(precision_block, height=140, bg="white", highlightthickness=1, highlightbackground="#d0d0d0")
     discovery_canvas = tk.Canvas(discovery_block, height=140, bg="white", highlightthickness=1, highlightbackground="#d0d0d0")
     precision_canvas.grid(row=1, column=0, sticky="we", pady=(6, 0))
@@ -2222,7 +2231,7 @@ def run_gui() -> None:
     tables_frame.grid_columnconfigure(1, weight=1, uniform="tbl")
 
     precision_box = ttk.LabelFrame(tables_frame, text="Detalhe: Precisão orbital (RMS médio por ano)")
-    discovery_box = ttk.LabelFrame(tables_frame, text="Detalhe: Novas descobertas (por mes)")
+    discovery_box = ttk.LabelFrame(tables_frame, text="Detalhe: Novas descobertas (por mês)")
     latest_box = ttk.LabelFrame(tables_frame, text="Últimas descobertas")
     precision_box.grid(row=0, column=0, sticky="nsew", padx=(0, 6), pady=(0, 8))
     discovery_box.grid(row=0, column=1, sticky="nsew", padx=(6, 0), pady=(0, 8))
@@ -2444,7 +2453,7 @@ def run_gui() -> None:
     alert_wrap = ttk.Frame(tab_alert)
     alert_wrap.pack(fill="both", expand=True, padx=16, pady=(4, 12))
 
-    filter_frame = ttk.LabelFrame(alert_wrap, text="Filtros e Acoes")
+    filter_frame = ttk.LabelFrame(alert_wrap, text="Filtros e Ações")
     filter_frame.pack(fill="x", pady=(0, 10))
 
     ttk.Label(filter_frame, text="Prioridade:").grid(row=0, column=0, sticky="w", padx=4, pady=4)
@@ -2589,92 +2598,6 @@ def run_gui() -> None:
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def simulate_alerts() -> None:
-        cfg = cfg_from_fields()
-
-        def worker() -> None:
-            try:
-                conn = connect(cfg)
-                cur = conn.cursor()
-
-                cur.execute("""
-                    SELECT TOP 1 id_internal, diameter
-                    FROM Asteroid
-                    WHERE diameter IS NOT NULL AND diameter > 10
-                    ORDER BY diameter DESC;
-                """)
-                row = cur.fetchone()
-                if not row:
-                    q_alerts.put(("error", ["Não encontrei asteroide com diametro > 10."]))
-                    conn.close()
-                    return
-                id_internal = int(row[0])
-
-                cur.execute("SELECT ISNULL(MAX(id_ca), 0) + 1 FROM Close_Approach;")
-                row = cur.fetchone()
-                id_ca = int(row[0] if row else 1)
-                cur.execute(
-                    "INSERT INTO Close_Approach (id_ca, approach_date, rel_velocity_kms, dist_ld, id_internal) "
-                    "VALUES (?, DATEADD(DAY, 3, CAST(GETDATE() AS date)), 12.3, 0.5, ?)",
-                    id_ca,
-                    id_internal,
-                )
-
-                cur.execute("""
-                    SELECT TOP 1 id_internal
-                    FROM Asteroid
-                    WHERE pha_flag = 'Y' AND diameter IS NOT NULL AND diameter > 0.1
-                    ORDER BY diameter DESC;
-                """)
-                pha_row = cur.fetchone()
-                if pha_row:
-                    pha_id = int(pha_row[0])
-                    cur.execute("""
-                        UPDATE TOP (1) Orbit
-                        SET rms = 0.9, moid_ld = 10
-                        WHERE id_internal = ?;
-                    """, pha_id)
-
-                cur.execute("""
-                    SELECT TOP 1 id_internal
-                    FROM Asteroid
-                    WHERE diameter IS NOT NULL AND diameter > 500
-                      AND created_at >= DATEADD(MONTH, -1, SYSDATETIME())
-                    ORDER BY diameter DESC;
-                """)
-                new_row = cur.fetchone()
-                if new_row:
-                    new_id = int(new_row[0])
-                    cur.execute("""
-                        UPDATE TOP (1) Orbit
-                        SET moid_ld = 30
-                        WHERE id_internal = ?;
-                    """, new_id)
-
-                cur.execute("""
-                    SELECT TOP 1 id_internal
-                    FROM Asteroid
-                    WHERE diameter IS NOT NULL AND diameter > 200
-                      AND albedo IS NOT NULL AND albedo > 0.3
-                    ORDER BY diameter DESC;
-                """)
-                an_row = cur.fetchone()
-                if an_row:
-                    an_id = int(an_row[0])
-                    cur.execute("""
-                        UPDATE TOP (1) Orbit
-                        SET e = 0.85, i = 75
-                        WHERE id_internal = ?;
-                    """, an_id)
-
-                conn.commit()
-                conn.close()
-                q_alerts.put(("log", ["Simulacao concluida. Atualiza a lista de alertas."]))
-            except Exception as ex:
-                q_alerts.put(("error", [str(ex)]))
-
-        threading.Thread(target=worker, daemon=True).start()
-
     def update_alert_tree(rows: list) -> None:
         for item in alert_tree.get_children():
             alert_tree.delete(item)
@@ -2727,7 +2650,7 @@ def run_gui() -> None:
                 if new_rows:
                     q_alerts.put(("notify", new_rows))
             except Exception as ex:
-                q_alerts.put(("error", [f"Notificacoes: {ex}"]))
+                q_alerts.put(("error", [f"Notificações: {ex}"]))
             finally:
                 notify_running["value"] = False
 
@@ -2736,10 +2659,10 @@ def run_gui() -> None:
     def on_toggle_notify() -> None:
         if var_notify_high.get():
             last_high_id["value"] = None
-            log_alert("Notificacoes de alta prioridade ativadas.")
+            log_alert("Notificações de alta prioridade ativadas.")
             check_high_alerts()
         else:
-            log_alert("Notificacoes de alta prioridade desativadas.")
+            log_alert("Notificações de alta prioridade desativadas.")
         cfg = cfg_from_fields()
         cfg["notify_high"] = bool(var_notify_high.get())
         save_loader_config(cfg, DEFAULT_LOADER_CONFIG)
@@ -2753,8 +2676,7 @@ def run_gui() -> None:
 
     ttk.Button(filter_frame, text="Atualizar Lista", command=refresh_alerts).grid(row=0, column=4, padx=4, pady=4, sticky="e")
     ttk.Button(filter_frame, text="Carregar Filtros", command=load_filter_options).grid(row=1, column=4, padx=4, pady=4, sticky="e")
-    ttk.Button(filter_frame, text="Simular Alertas", command=simulate_alerts).grid(row=0, column=5, rowspan=2, padx=4, pady=4, sticky="e")
-
+    
     def poll_alert_queue() -> None:
         try:
             while True:
@@ -2769,7 +2691,7 @@ def run_gui() -> None:
                         log_alert(msg)
                         messagebox.showwarning("Alerta de Alta Prioridade", msg)
                 elif kind == "notify_init":
-                    log_alert("Notificacoes iniciadas (baseline atual definido).")
+                    log_alert("Notificações iniciadas (baseline atual definido).")
                 elif kind == "error":
                     log_alert(f"[ERRO] {payload[0] if payload else ''}")
                 elif kind == "log":
