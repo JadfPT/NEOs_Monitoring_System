@@ -754,27 +754,54 @@ class QueueWriter(io.TextIOBase):
 
 def run_gui() -> None:
     root = Tk()
-    root.title("Aplicacao Cliente para SQL Server")
-    root.geometry("880x620")
+    root.title("NEOs Monitoring System - SQL Client")
+    root.geometry("1080x720")
+    root.minsize(980, 640)
 
     style = ttk.Style(root)
     try:
         style.theme_use("clam")
     except tk.TclError:
         pass
-    root.configure(bg="#f6f7f9")
+    palette = {
+        "bg": "#f2efe9",
+        "card": "#ffffff",
+        "ink": "#1f2328",
+        "muted": "#5b6470",
+        "accent": "#1f4b99",
+        "accent_soft": "#e4ecf8",
+        "accent_warm": "#f29d38",
+        "border": "#d6d0c8",
+    }
+    root.configure(bg=palette["bg"])
     default_font = tkfont.nametofont("TkDefaultFont")
-    default_font.configure(family="Segoe UI", size=10)
-    style.configure("TFrame", background="#f6f7f9")
-    style.configure("TNotebook", background="#f6f7f9", borderwidth=0)
-    style.configure("TNotebook.Tab", padding=(12, 6))
-    style.configure("TLabel", background="#f6f7f9")
-    style.configure("TButton", padding=(10, 4))
-    style.configure("TLabelframe", background="#f6f7f9")
-    style.configure("TLabelframe.Label", background="#f6f7f9", font=("Segoe UI", 10, "bold"))
-    style.configure("Header.TLabel", font=("Segoe UI", 11, "bold"), background="#f6f7f9")
-    style.configure("Muted.TLabel", foreground="#666666", background="#f6f7f9")
-    style.configure("Treeview", rowheight=22)
+    default_font.configure(family="Calibri", size=11)
+    heading_font = ("Trebuchet MS", 14, "bold")
+    subheading_font = ("Trebuchet MS", 10, "bold")
+    style.configure("TFrame", background=palette["bg"])
+    style.configure("Card.TFrame", background=palette["card"], relief="solid", borderwidth=1)
+    style.configure("TNotebook", background=palette["bg"], borderwidth=0)
+    style.configure("TNotebook.Tab", padding=(14, 8), background=palette["bg"], foreground=palette["muted"])
+    style.map(
+        "TNotebook.Tab",
+        background=[("selected", palette["card"])],
+        foreground=[("selected", palette["ink"])],
+    )
+    style.configure("TLabel", background=palette["bg"], foreground=palette["ink"])
+    style.configure("Muted.TLabel", foreground=palette["muted"], background=palette["bg"])
+    style.configure("Title.TLabel", font=heading_font, foreground=palette["accent"], background=palette["bg"])
+    style.configure("Subtitle.TLabel", font=("Trebuchet MS", 10), foreground=palette["muted"], background=palette["bg"])
+    style.configure("Header.TLabel", font=subheading_font, background=palette["bg"])
+    style.configure("TButton", padding=(12, 6))
+    style.configure("Accent.TButton", padding=(12, 6), background=palette["accent"], foreground="white")
+    style.map("Accent.TButton", background=[("active", palette["accent"])], foreground=[("active", "white")])
+    style.configure("TEntry", fieldbackground=palette["card"], foreground=palette["ink"])
+    style.configure("TCombobox", fieldbackground=palette["card"], background=palette["card"], foreground=palette["ink"])
+    style.configure("TLabelframe", background=palette["card"], bordercolor=palette["border"])
+    style.configure("TLabelframe.Label", background=palette["card"], font=subheading_font, foreground=palette["ink"])
+    style.configure("Treeview", rowheight=24, background=palette["card"], fieldbackground=palette["card"])
+    style.configure("Treeview.Heading", font=subheading_font, background=palette["accent_soft"], foreground=palette["ink"])
+    style.map("Treeview", background=[("selected", palette["accent_soft"])], foreground=[("selected", palette["ink"])])
 
     q: "queue.Queue[str]" = queue.Queue()
     q_alerts: "queue.Queue[tuple[str, list]]" = queue.Queue()
@@ -801,7 +828,21 @@ def run_gui() -> None:
     var_gen_csv = tk.StringVar(value=csv_default)
     var_output = tk.StringVar(value=output_default)
 
-    notebook = ttk.Notebook(root)
+    header = ttk.Frame(root)
+    header.pack(fill="x", padx=18, pady=(14, 6))
+    ttk.Label(header, text="NEOs Monitoring System", style="Title.TLabel").pack(anchor="w")
+    ttk.Label(
+        header,
+        text="SQL Client - Gestao, monitorizacao e observacoes",
+        style="Subtitle.TLabel",
+    ).pack(anchor="w", pady=(2, 0))
+
+    tk.Frame(root, bg=palette["accent"], height=2).pack(fill="x", padx=18, pady=(0, 8))
+
+    main_card = ttk.Frame(root, style="Card.TFrame")
+    main_card.pack(fill="both", expand=True, padx=18, pady=(6, 16))
+
+    notebook = ttk.Notebook(main_card)
     tab_conn = ttk.Frame(notebook)
     tab_load = ttk.Frame(notebook)
     tab_gen = ttk.Frame(notebook)
@@ -814,17 +855,26 @@ def run_gui() -> None:
     notebook.add(tab_obs, text="Observacoes")
     notebook.add(tab_monitor, text="Monitorizacao")
     notebook.add(tab_alert, text="Alertas")
-    notebook.pack(fill="both", expand=True, padx=8, pady=8)
+    notebook.pack(fill="both", expand=True, padx=10, pady=10)
 
     # --- Tab Ligar ---
-    conn_form = ttk.Frame(tab_conn)
-    conn_form.pack(fill="x", padx=10, pady=10)
+    conn_wrap = ttk.Frame(tab_conn)
+    conn_wrap.pack(fill="both", expand=True, padx=16, pady=12)
+    conn_wrap.columnconfigure(0, weight=2)
+    conn_wrap.columnconfigure(1, weight=1)
+
+    conn_form = ttk.LabelFrame(conn_wrap, text="Credenciais de Ligacao")
+    conn_form.grid(row=0, column=0, sticky="nsew", padx=(0, 12), pady=6)
+    conn_form.columnconfigure(1, weight=1)
+
+    conn_side = ttk.LabelFrame(conn_wrap, text="Estado e Acoes")
+    conn_side.grid(row=0, column=1, sticky="nsew", padx=0, pady=6)
+    conn_side.columnconfigure(0, weight=1)
 
     def add_row(row: int, label: str, var: tk.StringVar, show: Optional[str] = None) -> None:
-        ttk.Label(conn_form, text=label).grid(row=row, column=0, sticky="w", padx=6, pady=4)
+        ttk.Label(conn_form, text=label).grid(row=row, column=0, sticky="w", padx=10, pady=6)
         entry = ttk.Entry(conn_form, textvariable=var, show=show or "")
-        entry.grid(row=row, column=1, sticky="we", padx=6, pady=4)
-        conn_form.grid_columnconfigure(1, weight=1)
+        entry.grid(row=row, column=1, sticky="we", padx=10, pady=6)
 
     add_row(0, "Servidor (IP/Nome):", var_server)
     add_row(1, "Porta (opcional):", var_port)
@@ -832,11 +882,12 @@ def run_gui() -> None:
     add_row(3, "Password:", var_password, show="*")
     add_row(4, "Base de Dados:", var_database)
 
-    status_label = ttk.Label(tab_conn, textvariable=status_var, foreground="gray")
-    status_label.pack(anchor="w", padx=16, pady=(0, 8))
+    status_label = ttk.Label(conn_side, textvariable=status_var, style="Muted.TLabel")
+    status_label.grid(row=0, column=0, sticky="w", padx=12, pady=(10, 6))
 
-    btn_frame = ttk.Frame(tab_conn)
-    btn_frame.pack(anchor="w", padx=16, pady=6)
+    btn_frame = ttk.Frame(conn_side)
+    btn_frame.grid(row=1, column=0, sticky="we", padx=12, pady=6)
+    btn_frame.columnconfigure(0, weight=1)
 
     def cfg_from_fields() -> dict:
         return {
@@ -850,11 +901,11 @@ def run_gui() -> None:
     def set_status(msg: str, ok: Optional[bool] = None) -> None:
         status_var.set(msg)
         if ok is True:
-            status_label.configure(foreground="green")
+            status_label.configure(foreground="#1b6b3a")
         elif ok is False:
-            status_label.configure(foreground="red")
+            status_label.configure(foreground="#b42318")
         else:
-            status_label.configure(foreground="gray")
+            status_label.configure(foreground=palette["muted"])
 
     def set_tabs_enabled(connected: bool) -> None:
         state = "normal" if connected else "disabled"
@@ -904,9 +955,15 @@ def run_gui() -> None:
         set_status("Configuracao carregada.", True)
         set_tabs_enabled(False)
 
-    ttk.Button(btn_frame, text="Ligar a BD", command=on_test_connection).grid(row=0, column=0, padx=4, pady=4)
-    ttk.Button(btn_frame, text="Carregar Configuracao", command=on_load_cfg).grid(row=0, column=1, padx=4, pady=4)
-    ttk.Button(btn_frame, text="Guardar Configuracao", command=on_save_cfg).grid(row=0, column=2, padx=4, pady=4)
+    ttk.Button(btn_frame, text="Ligar a BD", command=on_test_connection, style="Accent.TButton").grid(
+        row=0, column=0, sticky="we", padx=4, pady=(4, 8)
+    )
+    ttk.Button(btn_frame, text="Carregar Configuracao", command=on_load_cfg).grid(
+        row=1, column=0, sticky="we", padx=4, pady=4
+    )
+    ttk.Button(btn_frame, text="Guardar Configuracao", command=on_save_cfg).grid(
+        row=2, column=0, sticky="we", padx=4, pady=4
+    )
     set_tabs_enabled(False)
 
     cfg = load_loader_config(DEFAULT_LOADER_CONFIG)
@@ -920,12 +977,26 @@ def run_gui() -> None:
         set_status("Configuracao carregada.", True)
 
     # --- Tab Atualizar BD ---
-    load_top = ttk.Frame(tab_load)
-    load_top.pack(fill="x", padx=10, pady=8)
-    ttk.Label(load_top, text="CSV:").grid(row=0, column=0, sticky="w", padx=4, pady=4)
-    csv_entry = ttk.Entry(load_top, textvariable=var_csv)
-    csv_entry.grid(row=0, column=1, sticky="we", padx=4, pady=4)
-    load_top.grid_columnconfigure(1, weight=1)
+    load_wrap = ttk.Frame(tab_load)
+    load_wrap.pack(fill="both", expand=True, padx=16, pady=12)
+    load_wrap.columnconfigure(0, weight=2)
+    load_wrap.columnconfigure(1, weight=1)
+
+    load_card = ttk.LabelFrame(load_wrap, text="Fonte de Dados")
+    load_card.grid(row=0, column=0, sticky="nsew", padx=(0, 12), pady=6)
+    load_card.columnconfigure(1, weight=1)
+
+    ttk.Label(load_card, text="CSV:").grid(row=0, column=0, sticky="w", padx=10, pady=8)
+    csv_entry = ttk.Entry(load_card, textvariable=var_csv)
+    csv_entry.grid(row=0, column=1, sticky="we", padx=10, pady=8)
+
+    load_actions = ttk.LabelFrame(load_wrap, text="Operacoes")
+    load_actions.grid(row=0, column=1, sticky="nsew", pady=6)
+    load_actions.columnconfigure(0, weight=1)
+
+    load_status_var = tk.StringVar(value="Pronto.")
+    load_status_label = ttk.Label(load_actions, textvariable=load_status_var, style="Muted.TLabel")
+    load_status_label.grid(row=0, column=0, sticky="w", padx=10, pady=(10, 6))
 
     def on_browse() -> None:
         path = filedialog.askopenfilename(
@@ -945,6 +1016,7 @@ def run_gui() -> None:
             messagebox.showerror("CSV", "Ficheiro nao existe.")
             return
         run_button.configure(state="disabled")
+        load_status_var.set("A carregar CSV...")
         set_status("A carregar CSV...", None)
         output_text.configure(state="normal")
         output_text.insert("end", f"[INFO] A iniciar carregamento: {csv_path}\n")
@@ -972,39 +1044,57 @@ def run_gui() -> None:
                 if msg == "__DONE__":
                     run_button.configure(state="normal")
                     set_status("Processo concluido.", True)
+                    load_status_var.set("Processo concluido.")
                 else:
                     output_text.configure(state="normal")
                     output_text.insert("end", msg)
                     output_text.see("end")
                     output_text.configure(state="disabled")
+                    if msg.startswith("[ERRO]"):
+                        load_status_var.set("Erro no carregamento.")
         except queue.Empty:
             pass
         root.after(100, poll_queue)
 
-    ttk.Button(load_top, text="Escolher CSV", command=on_browse).grid(row=0, column=2, padx=4, pady=4)
-    run_button = ttk.Button(load_top, text="Atualizar BD", command=on_run)
-    run_button.grid(row=0, column=3, padx=4, pady=4)
+    ttk.Button(load_card, text="Escolher CSV", command=on_browse).grid(row=0, column=2, padx=10, pady=8)
+    run_button = ttk.Button(load_actions, text="Atualizar BD", command=on_run, style="Accent.TButton")
+    run_button.grid(row=1, column=0, sticky="we", padx=10, pady=(6, 10))
 
-    output_frame = ttk.Frame(tab_load)
-    output_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+    output_card = ttk.LabelFrame(tab_load, text="Log de Carregamento")
+    output_card.pack(fill="both", expand=True, padx=16, pady=(0, 12))
+    output_frame = ttk.Frame(output_card)
+    output_frame.pack(fill="both", expand=True, padx=8, pady=8)
     output_text = tk.Text(output_frame, height=16, wrap="word")
     output_text.pack(side="left", fill="both", expand=True)
-    output_text.configure(state="disabled")
+    output_text.configure(state="disabled", bg=palette["card"], fg=palette["ink"], insertbackground=palette["ink"], relief="flat")
     scroll = ttk.Scrollbar(output_frame, orient="vertical", command=output_text.yview)
     scroll.pack(side="right", fill="y")
     output_text.configure(yscrollcommand=scroll.set)
 
     # --- Tab Gerar SQL ---
-    gen_top = ttk.Frame(tab_gen)
-    gen_top.pack(fill="x", padx=10, pady=8)
-    gen_top.grid_columnconfigure(1, weight=1)
+    gen_wrap = ttk.Frame(tab_gen)
+    gen_wrap.pack(fill="both", expand=True, padx=16, pady=12)
+    gen_wrap.columnconfigure(0, weight=2)
+    gen_wrap.columnconfigure(1, weight=1)
 
-    ttk.Label(gen_top, text="Template SQL:").grid(row=0, column=0, sticky="w", padx=4, pady=4)
-    ttk.Entry(gen_top, textvariable=var_template).grid(row=0, column=1, sticky="we", padx=4, pady=4)
-    ttk.Label(gen_top, text="CSV:").grid(row=1, column=0, sticky="w", padx=4, pady=4)
-    ttk.Entry(gen_top, textvariable=var_gen_csv).grid(row=1, column=1, sticky="we", padx=4, pady=4)
-    ttk.Label(gen_top, text="Output SQL:").grid(row=2, column=0, sticky="w", padx=4, pady=4)
-    ttk.Entry(gen_top, textvariable=var_output).grid(row=2, column=1, sticky="we", padx=4, pady=4)
+    gen_card = ttk.LabelFrame(gen_wrap, text="Parametros de Geracao")
+    gen_card.grid(row=0, column=0, sticky="nsew", padx=(0, 12), pady=6)
+    gen_card.columnconfigure(1, weight=1)
+
+    ttk.Label(gen_card, text="Template SQL:").grid(row=0, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(gen_card, textvariable=var_template).grid(row=0, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(gen_card, text="CSV:").grid(row=1, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(gen_card, textvariable=var_gen_csv).grid(row=1, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(gen_card, text="Output SQL:").grid(row=2, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(gen_card, textvariable=var_output).grid(row=2, column=1, sticky="we", padx=10, pady=8)
+
+    gen_actions = ttk.LabelFrame(gen_wrap, text="Operacoes")
+    gen_actions.grid(row=0, column=1, sticky="nsew", pady=6)
+    gen_actions.columnconfigure(0, weight=1)
+
+    gen_status_var = tk.StringVar(value="Pronto.")
+    gen_status_label = ttk.Label(gen_actions, textvariable=gen_status_var, style="Muted.TLabel")
+    gen_status_label.grid(row=0, column=0, sticky="w", padx=10, pady=(10, 6))
 
     def browse_template() -> None:
         path = filedialog.askopenfilename(
@@ -1031,13 +1121,15 @@ def run_gui() -> None:
         if path:
             var_output.set(path)
 
-    ttk.Button(gen_top, text="Escolher", command=browse_template).grid(row=0, column=2, padx=4, pady=4)
-    ttk.Button(gen_top, text="Escolher", command=browse_gen_csv).grid(row=1, column=2, padx=4, pady=4)
-    ttk.Button(gen_top, text="Guardar Como", command=browse_output).grid(row=2, column=2, padx=4, pady=4)
+    ttk.Button(gen_card, text="Escolher", command=browse_template).grid(row=0, column=2, padx=10, pady=8)
+    ttk.Button(gen_card, text="Escolher", command=browse_gen_csv).grid(row=1, column=2, padx=10, pady=8)
+    ttk.Button(gen_card, text="Guardar Como", command=browse_output).grid(row=2, column=2, padx=10, pady=8)
 
-    gen_log = tk.Text(tab_gen, height=16, wrap="word")
-    gen_log.pack(fill="both", expand=True, padx=10, pady=(0, 10))
-    gen_log.configure(state="disabled")
+    gen_log_card = ttk.LabelFrame(tab_gen, text="Log de Geracao")
+    gen_log_card.pack(fill="both", expand=True, padx=16, pady=(0, 12))
+    gen_log = tk.Text(gen_log_card, height=16, wrap="word")
+    gen_log.pack(fill="both", expand=True, padx=8, pady=8)
+    gen_log.configure(state="disabled", bg=palette["card"], fg=palette["ink"], insertbackground=palette["ink"], relief="flat")
 
     def log_gen(msg: str) -> None:
         gen_log.configure(state="normal")
@@ -1045,8 +1137,8 @@ def run_gui() -> None:
         gen_log.see("end")
         gen_log.configure(state="disabled")
 
-    gen_button = ttk.Button(gen_top, text="Gerar SQL")
-    gen_button.grid(row=3, column=2, padx=4, pady=8, sticky="e")
+    gen_button = ttk.Button(gen_actions, text="Gerar SQL", style="Accent.TButton")
+    gen_button.grid(row=1, column=0, sticky="we", padx=10, pady=(6, 10))
 
     def run_generate_sql() -> None:
         template_path = var_template.get().strip()
@@ -1063,6 +1155,7 @@ def run_gui() -> None:
             return
 
         gen_button.configure(state="disabled")
+        gen_status_var.set("A gerar SQL...")
         log_gen(f"[INFO] A gerar SQL a partir de {csv_path}")
 
         def worker() -> None:
@@ -1080,11 +1173,14 @@ def run_gui() -> None:
     gen_button.configure(command=run_generate_sql)
 
     # --- Tab Observacoes ---
+    obs_header = ttk.Frame(tab_obs)
+    obs_header.pack(fill="x", padx=16, pady=(12, 6))
+    ttk.Label(obs_header, text="Gestao Observacional", style="Header.TLabel").pack(side="left")
     obs_status_var = tk.StringVar(value="Pronto.")
-    ttk.Label(tab_obs, textvariable=obs_status_var, style="Muted.TLabel").pack(anchor="w", padx=10, pady=(8, 0))
+    ttk.Label(obs_header, textvariable=obs_status_var, style="Muted.TLabel").pack(side="right")
 
     obs_notebook = ttk.Notebook(tab_obs)
-    obs_notebook.pack(fill="both", expand=True, padx=8, pady=8)
+    obs_notebook.pack(fill="both", expand=True, padx=12, pady=8)
 
     tab_center = ttk.Frame(obs_notebook)
     tab_equipment = ttk.Frame(obs_notebook)
@@ -1120,27 +1216,36 @@ def run_gui() -> None:
     var_center_name = tk.StringVar(value="")
     var_center_location = tk.StringVar(value="")
 
-    center_form = ttk.LabelFrame(tab_center, text="Novo Centro")
-    center_form.pack(fill="x", padx=10, pady=10)
-    center_form.grid_columnconfigure(1, weight=1)
-    ttk.Label(center_form, text="Nome:").grid(row=0, column=0, sticky="w", padx=6, pady=4)
-    ttk.Entry(center_form, textvariable=var_center_name).grid(row=0, column=1, sticky="we", padx=6, pady=4)
-    ttk.Label(center_form, text="Localizacao:").grid(row=1, column=0, sticky="w", padx=6, pady=4)
-    ttk.Entry(center_form, textvariable=var_center_location).grid(row=1, column=1, sticky="we", padx=6, pady=4)
+    center_layout = ttk.Frame(tab_center)
+    center_layout.pack(fill="both", expand=True, padx=12, pady=12)
+    center_layout.columnconfigure(0, weight=1)
+    center_layout.columnconfigure(1, weight=2)
+
+    center_form = ttk.LabelFrame(center_layout, text="Novo Centro")
+    center_form.grid(row=0, column=0, sticky="nsew", padx=(0, 12), pady=6)
+    center_form.columnconfigure(1, weight=1)
+    ttk.Label(center_form, text="Nome:").grid(row=0, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(center_form, textvariable=var_center_name).grid(row=0, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(center_form, text="Localizacao:").grid(row=1, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(center_form, textvariable=var_center_location).grid(row=1, column=1, sticky="we", padx=10, pady=8)
 
     center_btns = ttk.Frame(center_form)
-    center_btns.grid(row=0, column=2, rowspan=2, padx=6, pady=4, sticky="n")
+    center_btns.grid(row=2, column=0, columnspan=2, sticky="we", padx=10, pady=(6, 10))
+    center_btns.columnconfigure(0, weight=1)
+    center_btns.columnconfigure(1, weight=1)
 
-    center_tree = ttk.Treeview(tab_center, columns=("id_center", "name", "location"), show="headings", height=10)
+    center_list = ttk.LabelFrame(center_layout, text="Lista de Centros")
+    center_list.grid(row=0, column=1, sticky="nsew", pady=6)
+    center_tree = ttk.Treeview(center_list, columns=("id_center", "name", "location"), show="headings", height=12)
     center_tree.heading("id_center", text="ID")
     center_tree.heading("name", text="Nome")
     center_tree.heading("location", text="Localizacao")
     center_tree.column("id_center", width=80, anchor="w")
     center_tree.column("name", width=240, anchor="w")
     center_tree.column("location", width=240, anchor="w")
-    center_tree.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+    center_tree.pack(fill="both", expand=True, padx=8, pady=8)
 
-    center_scroll = ttk.Scrollbar(tab_center, orient="vertical", command=center_tree.yview)
+    center_scroll = ttk.Scrollbar(center_list, orient="vertical", command=center_tree.yview)
     center_tree.configure(yscrollcommand=center_scroll.set)
     center_scroll.place(in_=center_tree, relx=1.0, rely=0, relheight=1.0, anchor="ne")
 
@@ -1149,25 +1254,34 @@ def run_gui() -> None:
     var_equipment_modelo = tk.StringVar(value="")
     var_equipment_center = tk.StringVar(value="")
 
-    equipment_form = ttk.LabelFrame(tab_equipment, text="Novo Equipamento")
-    equipment_form.pack(fill="x", padx=10, pady=10)
-    equipment_form.grid_columnconfigure(1, weight=1)
-    ttk.Label(equipment_form, text="Tipo:").grid(row=0, column=0, sticky="w", padx=6, pady=4)
-    ttk.Entry(equipment_form, textvariable=var_equipment_tipo).grid(row=0, column=1, sticky="we", padx=6, pady=4)
-    ttk.Label(equipment_form, text="Modelo:").grid(row=1, column=0, sticky="w", padx=6, pady=4)
-    ttk.Entry(equipment_form, textvariable=var_equipment_modelo).grid(row=1, column=1, sticky="we", padx=6, pady=4)
-    ttk.Label(equipment_form, text="Centro:").grid(row=2, column=0, sticky="w", padx=6, pady=4)
+    equipment_layout = ttk.Frame(tab_equipment)
+    equipment_layout.pack(fill="both", expand=True, padx=12, pady=12)
+    equipment_layout.columnconfigure(0, weight=1)
+    equipment_layout.columnconfigure(1, weight=2)
+
+    equipment_form = ttk.LabelFrame(equipment_layout, text="Novo Equipamento")
+    equipment_form.grid(row=0, column=0, sticky="nsew", padx=(0, 12), pady=6)
+    equipment_form.columnconfigure(1, weight=1)
+    ttk.Label(equipment_form, text="Tipo:").grid(row=0, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(equipment_form, textvariable=var_equipment_tipo).grid(row=0, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(equipment_form, text="Modelo:").grid(row=1, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(equipment_form, textvariable=var_equipment_modelo).grid(row=1, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(equipment_form, text="Centro:").grid(row=2, column=0, sticky="w", padx=10, pady=8)
     equipment_center_combo = ttk.Combobox(equipment_form, textvariable=var_equipment_center, state="readonly", width=28)
-    equipment_center_combo.grid(row=2, column=1, sticky="w", padx=6, pady=4)
+    equipment_center_combo.grid(row=2, column=1, sticky="we", padx=10, pady=8)
 
     equipment_btns = ttk.Frame(equipment_form)
-    equipment_btns.grid(row=0, column=2, rowspan=3, padx=6, pady=4, sticky="n")
+    equipment_btns.grid(row=3, column=0, columnspan=2, sticky="we", padx=10, pady=(6, 10))
+    equipment_btns.columnconfigure(0, weight=1)
+    equipment_btns.columnconfigure(1, weight=1)
 
+    equipment_list = ttk.LabelFrame(equipment_layout, text="Lista de Equipamentos")
+    equipment_list.grid(row=0, column=1, sticky="nsew", pady=6)
     equipment_tree = ttk.Treeview(
-        tab_equipment,
+        equipment_list,
         columns=("id_equipment", "tipo", "modelo", "center"),
         show="headings",
-        height=10,
+        height=12,
     )
     equipment_tree.heading("id_equipment", text="ID")
     equipment_tree.heading("tipo", text="Tipo")
@@ -1177,32 +1291,41 @@ def run_gui() -> None:
     equipment_tree.column("tipo", width=160, anchor="w")
     equipment_tree.column("modelo", width=200, anchor="w")
     equipment_tree.column("center", width=220, anchor="w")
-    equipment_tree.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+    equipment_tree.pack(fill="both", expand=True, padx=8, pady=8)
 
-    equipment_scroll = ttk.Scrollbar(tab_equipment, orient="vertical", command=equipment_tree.yview)
+    equipment_scroll = ttk.Scrollbar(equipment_list, orient="vertical", command=equipment_tree.yview)
     equipment_tree.configure(yscrollcommand=equipment_scroll.set)
     equipment_scroll.place(in_=equipment_tree, relx=1.0, rely=0, relheight=1.0, anchor="ne")
 
     # ---- Software ----
     var_software_version = tk.StringVar(value="")
 
-    software_form = ttk.LabelFrame(tab_software, text="Novo Software")
-    software_form.pack(fill="x", padx=10, pady=10)
-    software_form.grid_columnconfigure(1, weight=1)
-    ttk.Label(software_form, text="Versao:").grid(row=0, column=0, sticky="w", padx=6, pady=4)
-    ttk.Entry(software_form, textvariable=var_software_version).grid(row=0, column=1, sticky="we", padx=6, pady=4)
+    software_layout = ttk.Frame(tab_software)
+    software_layout.pack(fill="both", expand=True, padx=12, pady=12)
+    software_layout.columnconfigure(0, weight=1)
+    software_layout.columnconfigure(1, weight=2)
+
+    software_form = ttk.LabelFrame(software_layout, text="Novo Software")
+    software_form.grid(row=0, column=0, sticky="nsew", padx=(0, 12), pady=6)
+    software_form.columnconfigure(1, weight=1)
+    ttk.Label(software_form, text="Versao:").grid(row=0, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(software_form, textvariable=var_software_version).grid(row=0, column=1, sticky="we", padx=10, pady=8)
 
     software_btns = ttk.Frame(software_form)
-    software_btns.grid(row=0, column=2, padx=6, pady=4, sticky="n")
+    software_btns.grid(row=1, column=0, columnspan=2, sticky="we", padx=10, pady=(6, 10))
+    software_btns.columnconfigure(0, weight=1)
+    software_btns.columnconfigure(1, weight=1)
 
-    software_tree = ttk.Treeview(tab_software, columns=("id_software", "version"), show="headings", height=10)
+    software_list = ttk.LabelFrame(software_layout, text="Lista de Software")
+    software_list.grid(row=0, column=1, sticky="nsew", pady=6)
+    software_tree = ttk.Treeview(software_list, columns=("id_software", "version"), show="headings", height=12)
     software_tree.heading("id_software", text="ID")
     software_tree.heading("version", text="Versao")
     software_tree.column("id_software", width=80, anchor="w")
     software_tree.column("version", width=260, anchor="w")
-    software_tree.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+    software_tree.pack(fill="both", expand=True, padx=8, pady=8)
 
-    software_scroll = ttk.Scrollbar(tab_software, orient="vertical", command=software_tree.yview)
+    software_scroll = ttk.Scrollbar(software_list, orient="vertical", command=software_tree.yview)
     software_tree.configure(yscrollcommand=software_scroll.set)
     software_scroll.place(in_=software_tree, relx=1.0, rely=0, relheight=1.0, anchor="ne")
 
@@ -1210,22 +1333,31 @@ def run_gui() -> None:
     var_astronomer_name = tk.StringVar(value="")
     var_astronomer_aff = tk.StringVar(value="")
 
-    astronomer_form = ttk.LabelFrame(tab_astronomer, text="Novo Astronomo")
-    astronomer_form.pack(fill="x", padx=10, pady=10)
-    astronomer_form.grid_columnconfigure(1, weight=1)
-    ttk.Label(astronomer_form, text="Nome:").grid(row=0, column=0, sticky="w", padx=6, pady=4)
-    ttk.Entry(astronomer_form, textvariable=var_astronomer_name).grid(row=0, column=1, sticky="we", padx=6, pady=4)
-    ttk.Label(astronomer_form, text="Afiliacao:").grid(row=1, column=0, sticky="w", padx=6, pady=4)
-    ttk.Entry(astronomer_form, textvariable=var_astronomer_aff).grid(row=1, column=1, sticky="we", padx=6, pady=4)
+    astronomer_layout = ttk.Frame(tab_astronomer)
+    astronomer_layout.pack(fill="both", expand=True, padx=12, pady=12)
+    astronomer_layout.columnconfigure(0, weight=1)
+    astronomer_layout.columnconfigure(1, weight=2)
+
+    astronomer_form = ttk.LabelFrame(astronomer_layout, text="Novo Astronomo")
+    astronomer_form.grid(row=0, column=0, sticky="nsew", padx=(0, 12), pady=6)
+    astronomer_form.columnconfigure(1, weight=1)
+    ttk.Label(astronomer_form, text="Nome:").grid(row=0, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(astronomer_form, textvariable=var_astronomer_name).grid(row=0, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(astronomer_form, text="Afiliacao:").grid(row=1, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(astronomer_form, textvariable=var_astronomer_aff).grid(row=1, column=1, sticky="we", padx=10, pady=8)
 
     astronomer_btns = ttk.Frame(astronomer_form)
-    astronomer_btns.grid(row=0, column=2, rowspan=2, padx=6, pady=4, sticky="n")
+    astronomer_btns.grid(row=2, column=0, columnspan=2, sticky="we", padx=10, pady=(6, 10))
+    astronomer_btns.columnconfigure(0, weight=1)
+    astronomer_btns.columnconfigure(1, weight=1)
 
+    astronomer_list = ttk.LabelFrame(astronomer_layout, text="Lista de Astronomos")
+    astronomer_list.grid(row=0, column=1, sticky="nsew", pady=6)
     astronomer_tree = ttk.Treeview(
-        tab_astronomer,
+        astronomer_list,
         columns=("id_astronomer", "name", "affiliation"),
         show="headings",
-        height=10,
+        height=12,
     )
     astronomer_tree.heading("id_astronomer", text="ID")
     astronomer_tree.heading("name", text="Nome")
@@ -1233,9 +1365,9 @@ def run_gui() -> None:
     astronomer_tree.column("id_astronomer", width=80, anchor="w")
     astronomer_tree.column("name", width=200, anchor="w")
     astronomer_tree.column("affiliation", width=240, anchor="w")
-    astronomer_tree.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+    astronomer_tree.pack(fill="both", expand=True, padx=8, pady=8)
 
-    astronomer_scroll = ttk.Scrollbar(tab_astronomer, orient="vertical", command=astronomer_tree.yview)
+    astronomer_scroll = ttk.Scrollbar(astronomer_list, orient="vertical", command=astronomer_tree.yview)
     astronomer_tree.configure(yscrollcommand=astronomer_scroll.set)
     astronomer_scroll.place(in_=astronomer_tree, relx=1.0, rely=0, relheight=1.0, anchor="ne")
 
@@ -1249,15 +1381,20 @@ def run_gui() -> None:
     var_obs_software = tk.StringVar(value="")
     var_obs_equipment = tk.StringVar(value="")
 
-    observation_form = ttk.LabelFrame(tab_observation, text="Nova Observacao")
-    observation_form.pack(fill="x", padx=10, pady=10)
-    observation_form.grid_columnconfigure(1, weight=1)
+    observation_layout = ttk.Frame(tab_observation)
+    observation_layout.pack(fill="both", expand=True, padx=12, pady=12)
+    observation_layout.columnconfigure(0, weight=1)
+    observation_layout.columnconfigure(1, weight=2)
 
-    ttk.Label(observation_form, text="Data (YYYY-MM-DD HH:MM):").grid(row=0, column=0, sticky="w", padx=6, pady=4)
-    ttk.Entry(observation_form, textvariable=var_obs_date).grid(row=0, column=1, sticky="we", padx=6, pady=4)
-    ttk.Label(observation_form, text="Duracao (min):").grid(row=1, column=0, sticky="w", padx=6, pady=4)
-    ttk.Entry(observation_form, textvariable=var_obs_duration).grid(row=1, column=1, sticky="we", padx=6, pady=4)
-    ttk.Label(observation_form, text="Modo:").grid(row=2, column=0, sticky="w", padx=6, pady=4)
+    observation_form = ttk.LabelFrame(observation_layout, text="Nova Observacao")
+    observation_form.grid(row=0, column=0, sticky="nsew", padx=(0, 12), pady=6)
+    observation_form.columnconfigure(1, weight=1)
+
+    ttk.Label(observation_form, text="Data (YYYY-MM-DD HH:MM):").grid(row=0, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(observation_form, textvariable=var_obs_date).grid(row=0, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(observation_form, text="Duracao (min):").grid(row=1, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(observation_form, textvariable=var_obs_duration).grid(row=1, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(observation_form, text="Modo:").grid(row=2, column=0, sticky="w", padx=10, pady=8)
     obs_mode_combo = ttk.Combobox(
         observation_form,
         textvariable=var_obs_mode,
@@ -1265,27 +1402,31 @@ def run_gui() -> None:
         values=obs_mode_values,
         width=28,
     )
-    obs_mode_combo.grid(row=2, column=1, sticky="w", padx=6, pady=4)
-    ttk.Label(observation_form, text="ID Asteroide:").grid(row=3, column=0, sticky="w", padx=6, pady=4)
-    ttk.Entry(observation_form, textvariable=var_obs_asteroid).grid(row=3, column=1, sticky="we", padx=6, pady=4)
-    ttk.Label(observation_form, text="Astronomo:").grid(row=4, column=0, sticky="w", padx=6, pady=4)
+    obs_mode_combo.grid(row=2, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(observation_form, text="ID Asteroide:").grid(row=3, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(observation_form, textvariable=var_obs_asteroid).grid(row=3, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(observation_form, text="Astronomo:").grid(row=4, column=0, sticky="w", padx=10, pady=8)
     obs_astronomer_combo = ttk.Combobox(observation_form, textvariable=var_obs_astronomer, state="readonly", width=28)
-    obs_astronomer_combo.grid(row=4, column=1, sticky="w", padx=6, pady=4)
-    ttk.Label(observation_form, text="Software:").grid(row=5, column=0, sticky="w", padx=6, pady=4)
+    obs_astronomer_combo.grid(row=4, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(observation_form, text="Software:").grid(row=5, column=0, sticky="w", padx=10, pady=8)
     obs_software_combo = ttk.Combobox(observation_form, textvariable=var_obs_software, state="readonly", width=28)
-    obs_software_combo.grid(row=5, column=1, sticky="w", padx=6, pady=4)
-    ttk.Label(observation_form, text="Equipamento:").grid(row=6, column=0, sticky="w", padx=6, pady=4)
+    obs_software_combo.grid(row=5, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(observation_form, text="Equipamento:").grid(row=6, column=0, sticky="w", padx=10, pady=8)
     obs_equipment_combo = ttk.Combobox(observation_form, textvariable=var_obs_equipment, state="readonly", width=28)
-    obs_equipment_combo.grid(row=6, column=1, sticky="w", padx=6, pady=4)
+    obs_equipment_combo.grid(row=6, column=1, sticky="we", padx=10, pady=8)
 
     observation_btns = ttk.Frame(observation_form)
-    observation_btns.grid(row=0, column=2, rowspan=7, padx=6, pady=4, sticky="n")
+    observation_btns.grid(row=7, column=0, columnspan=2, sticky="we", padx=10, pady=(6, 10))
+    observation_btns.columnconfigure(0, weight=1)
+    observation_btns.columnconfigure(1, weight=1)
 
+    observation_list = ttk.LabelFrame(observation_layout, text="Lista de Observacoes")
+    observation_list.grid(row=0, column=1, sticky="nsew", pady=6)
     observation_tree = ttk.Treeview(
-        tab_observation,
+        observation_list,
         columns=("id_observation", "date", "duration", "mode", "asteroid", "astronomer", "software", "equipment", "center"),
         show="headings",
-        height=10,
+        height=12,
     )
     observation_tree.heading("id_observation", text="ID")
     observation_tree.heading("date", text="Data")
@@ -1305,14 +1446,14 @@ def run_gui() -> None:
     observation_tree.column("software", width=120, anchor="w")
     observation_tree.column("equipment", width=180, anchor="w")
     observation_tree.column("center", width=160, anchor="w")
-    observation_tree.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+    observation_tree.pack(fill="both", expand=True, padx=8, pady=8)
 
-    observation_scroll = ttk.Scrollbar(tab_observation, orient="vertical", command=observation_tree.yview)
+    observation_scroll = ttk.Scrollbar(observation_list, orient="vertical", command=observation_tree.yview)
     observation_tree.configure(yscrollcommand=observation_scroll.set)
     observation_scroll.place(in_=observation_tree, relx=1.0, rely=0, relheight=1.0, anchor="ne")
-    observation_scroll_x = ttk.Scrollbar(tab_observation, orient="horizontal", command=observation_tree.xview)
+    observation_scroll_x = ttk.Scrollbar(observation_list, orient="horizontal", command=observation_tree.xview)
     observation_tree.configure(xscrollcommand=observation_scroll_x.set)
-    observation_scroll_x.pack(fill="x", padx=10, pady=(0, 10))
+    observation_scroll_x.pack(fill="x", padx=8, pady=(0, 8))
 
     def clear_obs_tree(tree: ttk.Treeview) -> None:
         for item in tree.get_children():
@@ -1616,22 +1757,46 @@ def run_gui() -> None:
 
         threading.Thread(target=worker, daemon=True).start()
 
-    ttk.Button(center_btns, text="Adicionar", command=add_center).grid(row=0, column=0, padx=4, pady=4, sticky="e")
-    ttk.Button(center_btns, text="Atualizar Lista", command=refresh_centers).grid(row=1, column=0, padx=4, pady=4, sticky="e")
+    ttk.Button(center_btns, text="Adicionar", command=add_center, style="Accent.TButton").grid(
+        row=0, column=0, sticky="we", padx=4, pady=4
+    )
+    ttk.Button(center_btns, text="Atualizar Lista", command=refresh_centers).grid(
+        row=0, column=1, sticky="we", padx=4, pady=4
+    )
 
-    ttk.Button(equipment_btns, text="Adicionar", command=add_equipment).grid(row=0, column=0, padx=4, pady=4, sticky="e")
-    ttk.Button(equipment_btns, text="Atualizar Lista", command=refresh_equipments).grid(row=1, column=0, padx=4, pady=4, sticky="e")
-    ttk.Button(equipment_btns, text="Carregar Centros", command=refresh_reference_lists).grid(row=2, column=0, padx=4, pady=4, sticky="e")
+    ttk.Button(equipment_btns, text="Adicionar", command=add_equipment, style="Accent.TButton").grid(
+        row=0, column=0, sticky="we", padx=4, pady=4
+    )
+    ttk.Button(equipment_btns, text="Atualizar Lista", command=refresh_equipments).grid(
+        row=0, column=1, sticky="we", padx=4, pady=4
+    )
+    ttk.Button(equipment_btns, text="Carregar Centros", command=refresh_reference_lists).grid(
+        row=1, column=0, columnspan=2, sticky="we", padx=4, pady=(2, 4)
+    )
 
-    ttk.Button(software_btns, text="Adicionar", command=add_software).grid(row=0, column=0, padx=4, pady=4, sticky="e")
-    ttk.Button(software_btns, text="Atualizar Lista", command=refresh_software).grid(row=1, column=0, padx=4, pady=4, sticky="e")
+    ttk.Button(software_btns, text="Adicionar", command=add_software, style="Accent.TButton").grid(
+        row=0, column=0, sticky="we", padx=4, pady=4
+    )
+    ttk.Button(software_btns, text="Atualizar Lista", command=refresh_software).grid(
+        row=0, column=1, sticky="we", padx=4, pady=4
+    )
 
-    ttk.Button(astronomer_btns, text="Adicionar", command=add_astronomer).grid(row=0, column=0, padx=4, pady=4, sticky="e")
-    ttk.Button(astronomer_btns, text="Atualizar Lista", command=refresh_astronomers).grid(row=1, column=0, padx=4, pady=4, sticky="e")
+    ttk.Button(astronomer_btns, text="Adicionar", command=add_astronomer, style="Accent.TButton").grid(
+        row=0, column=0, sticky="we", padx=4, pady=4
+    )
+    ttk.Button(astronomer_btns, text="Atualizar Lista", command=refresh_astronomers).grid(
+        row=0, column=1, sticky="we", padx=4, pady=4
+    )
 
-    ttk.Button(observation_btns, text="Adicionar", command=add_observation).grid(row=0, column=0, padx=4, pady=4, sticky="e")
-    ttk.Button(observation_btns, text="Atualizar Lista", command=refresh_observations).grid(row=1, column=0, padx=4, pady=4, sticky="e")
-    ttk.Button(observation_btns, text="Carregar Listas", command=refresh_reference_lists).grid(row=2, column=0, padx=4, pady=4, sticky="e")
+    ttk.Button(observation_btns, text="Adicionar", command=add_observation, style="Accent.TButton").grid(
+        row=0, column=0, sticky="we", padx=4, pady=4
+    )
+    ttk.Button(observation_btns, text="Atualizar Lista", command=refresh_observations).grid(
+        row=0, column=1, sticky="we", padx=4, pady=4
+    )
+    ttk.Button(observation_btns, text="Carregar Listas", command=refresh_reference_lists).grid(
+        row=1, column=0, columnspan=2, sticky="we", padx=4, pady=(2, 4)
+    )
 
     def poll_obs_queue() -> None:
         try:
@@ -1719,13 +1884,19 @@ def run_gui() -> None:
         root.after(200, poll_obs_queue)
 
     # --- Tab Monitorizacao ---
-    monitor_canvas = tk.Canvas(tab_monitor, highlightthickness=0)
-    monitor_scroll = ttk.Scrollbar(tab_monitor, orient="vertical", command=monitor_canvas.yview)
+    monitor_wrap = ttk.Frame(tab_monitor)
+    monitor_wrap.pack(fill="both", expand=True, padx=16, pady=12)
+
+    monitor_card = ttk.Frame(monitor_wrap, style="Card.TFrame")
+    monitor_card.pack(fill="both", expand=True)
+
+    monitor_canvas = tk.Canvas(monitor_card, highlightthickness=0, bg=palette["card"])
+    monitor_scroll = ttk.Scrollbar(monitor_card, orient="vertical", command=monitor_canvas.yview)
     monitor_canvas.configure(yscrollcommand=monitor_scroll.set)
     monitor_scroll.pack(side="right", fill="y")
     monitor_canvas.pack(side="left", fill="both", expand=True)
 
-    monitor_body = ttk.Frame(monitor_canvas)
+    monitor_body = ttk.Frame(monitor_canvas, style="Card.TFrame")
     monitor_window = monitor_canvas.create_window((0, 0), window=monitor_body, anchor="nw")
 
     def _sync_monitor_scroll(_event: tk.Event) -> None:
@@ -2025,8 +2196,11 @@ def run_gui() -> None:
     poll_monitor_queue()
 
     # --- Tab Alertas ---
-    filter_frame = ttk.Frame(tab_alert)
-    filter_frame.pack(fill="x", padx=10, pady=8)
+    alert_wrap = ttk.Frame(tab_alert)
+    alert_wrap.pack(fill="both", expand=True, padx=16, pady=12)
+
+    filter_frame = ttk.LabelFrame(alert_wrap, text="Filtros e Acoes")
+    filter_frame.pack(fill="x", pady=(0, 10))
 
     ttk.Label(filter_frame, text="Prioridade:").grid(row=0, column=0, sticky="w", padx=4, pady=4)
     ttk.Label(filter_frame, text="Nivel:").grid(row=0, column=2, sticky="w", padx=4, pady=4)
@@ -2054,8 +2228,11 @@ def run_gui() -> None:
     )
     notify_check.grid(row=1, column=1, columnspan=3, sticky="w", padx=4, pady=4)
 
+    alert_list = ttk.LabelFrame(alert_wrap, text="Lista de Alertas")
+    alert_list.pack(fill="both", expand=True, pady=(0, 10))
+
     alert_tree = ttk.Treeview(
-        tab_alert,
+        alert_list,
         columns=("id_alert", "data_generation", "priority", "level", "asteroid", "criteria"),
         show="headings",
         height=12,
@@ -2070,18 +2247,20 @@ def run_gui() -> None:
     ):
         alert_tree.heading(col, text=title)
         alert_tree.column(col, width=width, anchor="w")
-    alert_tree.pack(fill="both", expand=True, padx=10, pady=(0, 6))
+    alert_tree.pack(fill="both", expand=True, padx=8, pady=8)
 
-    alert_scroll = ttk.Scrollbar(tab_alert, orient="vertical", command=alert_tree.yview)
+    alert_scroll = ttk.Scrollbar(alert_list, orient="vertical", command=alert_tree.yview)
     alert_tree.configure(yscrollcommand=alert_scroll.set)
     alert_scroll.place(in_=alert_tree, relx=1.0, rely=0, relheight=1.0, anchor="ne")
-    alert_scroll_x = ttk.Scrollbar(tab_alert, orient="horizontal", command=alert_tree.xview)
+    alert_scroll_x = ttk.Scrollbar(alert_list, orient="horizontal", command=alert_tree.xview)
     alert_tree.configure(xscrollcommand=alert_scroll_x.set)
-    alert_scroll_x.pack(fill="x", padx=10, pady=(0, 6))
+    alert_scroll_x.pack(fill="x", padx=8, pady=(0, 8))
 
-    alert_log = tk.Text(tab_alert, height=6, wrap="word")
-    alert_log.pack(fill="x", padx=10, pady=(0, 10))
-    alert_log.configure(state="disabled")
+    alert_log_card = ttk.LabelFrame(alert_wrap, text="Historico")
+    alert_log_card.pack(fill="x")
+    alert_log = tk.Text(alert_log_card, height=6, wrap="word")
+    alert_log.pack(fill="x", padx=8, pady=8)
+    alert_log.configure(state="disabled", bg=palette["card"], fg=palette["ink"], insertbackground=palette["ink"], relief="flat")
 
     def log_alert(msg: str) -> None:
         alert_log.configure(state="normal")
@@ -2356,9 +2535,11 @@ def run_gui() -> None:
                 elif kind == "done":
                     log_gen(f"[OK] SQL gerado: {payload}")
                     gen_button.configure(state="normal")
+                    gen_status_var.set("Geracao concluida.")
                 elif kind == "error":
                     log_gen(f"[ERRO] {payload}")
                     gen_button.configure(state="normal")
+                    gen_status_var.set("Erro na geracao.")
         except queue.Empty:
             pass
         root.after(200, poll_gen_queue)
