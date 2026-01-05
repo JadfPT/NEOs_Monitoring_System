@@ -1282,7 +1282,7 @@ def run_gui() -> None:
     tab_observation = ttk.Frame(obs_notebook)
     obs_notebook.add(tab_center, text="Centros")
     obs_notebook.add(tab_equipment, text="Equipamentos")
-    obs_notebook.add(tab_software, text="Software")
+    obs_notebook.add(tab_software, text="Software_Obs")
     obs_notebook.add(tab_astronomer, text="Astrónomos")
     obs_notebook.add(tab_observation, text="Observações")
 
@@ -1359,6 +1359,9 @@ def run_gui() -> None:
     center_scroll = ttk.Scrollbar(center_list, orient="vertical", command=center_tree.yview)
     center_tree.configure(yscrollcommand=center_scroll.set)
     center_scroll.place(in_=center_tree, relx=1.0, rely=0, relheight=1.0, anchor="ne")
+    center_scroll_x = ttk.Scrollbar(center_list, orient="horizontal", command=center_tree.xview)
+    center_tree.configure(xscrollcommand=center_scroll_x.set)
+    center_scroll_x.pack(fill="x", padx=8, pady=(0, 8))
 
     # ---- Equipamentos ----
     var_equipment_tipo = tk.StringVar(value="")
@@ -1408,6 +1411,9 @@ def run_gui() -> None:
     equipment_scroll = ttk.Scrollbar(equipment_list, orient="vertical", command=equipment_tree.yview)
     equipment_tree.configure(yscrollcommand=equipment_scroll.set)
     equipment_scroll.place(in_=equipment_tree, relx=1.0, rely=0, relheight=1.0, anchor="ne")
+    equipment_scroll_x = ttk.Scrollbar(equipment_list, orient="horizontal", command=equipment_tree.xview)
+    equipment_tree.configure(xscrollcommand=equipment_scroll_x.set)
+    equipment_scroll_x.pack(fill="x", padx=8, pady=(0, 8))
 
     # ---- Software ----
     var_software_version = tk.StringVar(value="")
@@ -1417,7 +1423,7 @@ def run_gui() -> None:
     software_layout.columnconfigure(0, weight=1)
     software_layout.columnconfigure(1, weight=2)
 
-    software_form = ttk.LabelFrame(software_layout, text="Novo Software")
+    software_form = ttk.LabelFrame(software_layout, text="Novo Software_Obs")
     software_form.grid(row=0, column=0, sticky="nsew", padx=(0, 12), pady=6)
     software_form.columnconfigure(1, weight=1)
     ttk.Label(software_form, text="Versão:").grid(row=0, column=0, sticky="w", padx=10, pady=8)
@@ -1428,7 +1434,7 @@ def run_gui() -> None:
     software_btns.columnconfigure(0, weight=1)
     software_btns.columnconfigure(1, weight=1)
 
-    software_list = ttk.LabelFrame(software_layout, text="Lista de Software")
+    software_list = ttk.LabelFrame(software_layout, text="Lista de Software_Obs")
     software_list.grid(row=0, column=1, sticky="nsew", pady=6)
     software_tree = ttk.Treeview(software_list, columns=("id_software", "version"), show="headings", height=12)
     apply_tree_stripes(software_tree)
@@ -1441,6 +1447,9 @@ def run_gui() -> None:
     software_scroll = ttk.Scrollbar(software_list, orient="vertical", command=software_tree.yview)
     software_tree.configure(yscrollcommand=software_scroll.set)
     software_scroll.place(in_=software_tree, relx=1.0, rely=0, relheight=1.0, anchor="ne")
+    software_scroll_x = ttk.Scrollbar(software_list, orient="horizontal", command=software_tree.xview)
+    software_tree.configure(xscrollcommand=software_scroll_x.set)
+    software_scroll_x.pack(fill="x", padx=8, pady=(0, 8))
 
     # ---- Astrónomos ----
     var_astronomer_name = tk.StringVar(value="")
@@ -1484,6 +1493,9 @@ def run_gui() -> None:
     astronomer_scroll = ttk.Scrollbar(astronomer_list, orient="vertical", command=astronomer_tree.yview)
     astronomer_tree.configure(yscrollcommand=astronomer_scroll.set)
     astronomer_scroll.place(in_=astronomer_tree, relx=1.0, rely=0, relheight=1.0, anchor="ne")
+    astronomer_scroll_x = ttk.Scrollbar(astronomer_list, orient="horizontal", command=astronomer_tree.xview)
+    astronomer_tree.configure(xscrollcommand=astronomer_scroll_x.set)
+    astronomer_scroll_x.pack(fill="x", padx=8, pady=(0, 8))
 
     # ---- Observações ----
     var_obs_date = tk.StringVar(value=datetime.now().strftime("%Y-%m-%d %H:%M"))
@@ -1494,11 +1506,12 @@ def run_gui() -> None:
     var_obs_astronomer = tk.StringVar(value="")
     var_obs_software = tk.StringVar(value="")
     var_obs_equipment = tk.StringVar(value="")
+    var_obs_filter = tk.StringVar(value="")
 
     observation_layout = ttk.Frame(tab_observation)
     observation_layout.pack(fill="both", expand=True, padx=12, pady=12)
-    observation_layout.columnconfigure(0, weight=1)
-    observation_layout.columnconfigure(1, weight=2)
+    observation_layout.columnconfigure(0, weight=1, minsize=320)
+    observation_layout.columnconfigure(1, weight=3)
 
     observation_form = ttk.LabelFrame(observation_layout, text="Nova Observação")
     observation_form.grid(row=0, column=0, sticky="nsew", padx=(0, 12), pady=6)
@@ -1514,19 +1527,19 @@ def run_gui() -> None:
         textvariable=var_obs_mode,
         state="readonly",
         values=obs_mode_values,
-        width=28,
+        width=42,
     )
     obs_mode_combo.grid(row=2, column=1, sticky="we", padx=10, pady=8)
     ttk.Label(observation_form, text="ID Asteroide:").grid(row=3, column=0, sticky="w", padx=10, pady=8)
     ttk.Entry(observation_form, textvariable=var_obs_asteroid).grid(row=3, column=1, sticky="we", padx=10, pady=8)
     ttk.Label(observation_form, text="Astrónomo:").grid(row=4, column=0, sticky="w", padx=10, pady=8)
-    obs_astronomer_combo = ttk.Combobox(observation_form, textvariable=var_obs_astronomer, state="readonly", width=28)
+    obs_astronomer_combo = ttk.Combobox(observation_form, textvariable=var_obs_astronomer, state="readonly", width=42)
     obs_astronomer_combo.grid(row=4, column=1, sticky="we", padx=10, pady=8)
-    ttk.Label(observation_form, text="Software:").grid(row=5, column=0, sticky="w", padx=10, pady=8)
-    obs_software_combo = ttk.Combobox(observation_form, textvariable=var_obs_software, state="readonly", width=28)
+    ttk.Label(observation_form, text="Software_Obs:").grid(row=5, column=0, sticky="w", padx=10, pady=8)
+    obs_software_combo = ttk.Combobox(observation_form, textvariable=var_obs_software, state="readonly", width=42)
     obs_software_combo.grid(row=5, column=1, sticky="we", padx=10, pady=8)
     ttk.Label(observation_form, text="Equipamento:").grid(row=6, column=0, sticky="w", padx=10, pady=8)
-    obs_equipment_combo = ttk.Combobox(observation_form, textvariable=var_obs_equipment, state="readonly", width=28)
+    obs_equipment_combo = ttk.Combobox(observation_form, textvariable=var_obs_equipment, state="readonly", width=42)
     obs_equipment_combo.grid(row=6, column=1, sticky="we", padx=10, pady=8)
 
     observation_btns = ttk.Frame(observation_form)
@@ -1536,6 +1549,10 @@ def run_gui() -> None:
 
     observation_list = ttk.LabelFrame(observation_layout, text="Lista de Observações")
     observation_list.grid(row=0, column=1, sticky="nsew", pady=6)
+    obs_filter_bar = ttk.Frame(observation_list)
+    obs_filter_bar.pack(fill="x", padx=8, pady=(8, 2))
+    ttk.Label(obs_filter_bar, text="Filtro:").pack(side="left")
+    ttk.Entry(obs_filter_bar, textvariable=var_obs_filter).pack(side="left", fill="x", expand=True, padx=(6, 6))
     observation_tree = ttk.Treeview(
         observation_list,
         columns=("id_observation", "date", "duration", "mode", "asteroid", "astronomer", "software", "equipment", "center"),
@@ -1549,7 +1566,7 @@ def run_gui() -> None:
     observation_tree.heading("mode", text="Modo")
     observation_tree.heading("asteroid", text="Asteroide")
     observation_tree.heading("astronomer", text="Astrónomo")
-    observation_tree.heading("software", text="Software")
+    observation_tree.heading("software", text="Software_Obs")
     observation_tree.heading("equipment", text="Equipamento")
     observation_tree.heading("center", text="Centro")
     observation_tree.column("id_observation", width=70, anchor="w")
@@ -1618,12 +1635,12 @@ def run_gui() -> None:
             try:
                 conn = connect(cfg)
                 cur = conn.cursor()
-                cur.execute("SELECT id_software, version FROM Software ORDER BY id_software;")
+                cur.execute("SELECT id_software, version FROM Software_Obs ORDER BY id_software;")
                 rows = cur.fetchall()
                 conn.close()
                 q_obs.put(("software", rows))
             except Exception as ex:
-                q_obs.put(("error", f"Software: {ex}"))
+                q_obs.put(("error", f"Software_Obs: {ex}"))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -1643,14 +1660,15 @@ def run_gui() -> None:
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def refresh_observations() -> None:
+    def refresh_observations(filter_text: Optional[str] = None) -> None:
         cfg = cfg_from_fields()
+        text = (filter_text if filter_text is not None else var_obs_filter.get()).strip()
 
         def worker() -> None:
             try:
                 conn = connect(cfg)
                 cur = conn.cursor()
-                cur.execute("""
+                base_sql = """
                     SELECT
                         id_observation,
                         date,
@@ -1663,8 +1681,23 @@ def run_gui() -> None:
                         equipment_name,
                         center_name
                     FROM vw_Observations_Detail
-                    ORDER BY date DESC;
-                """)
+                """
+                if text:
+                    like = f"%{text}%"
+                    base_sql += """
+                    WHERE CAST(id_observation AS varchar(20)) LIKE ?
+                       OR CAST(id_internal AS varchar(20)) LIKE ?
+                       OR asteroid_name LIKE ?
+                       OR astronomer_name LIKE ?
+                       OR software_version LIKE ?
+                       OR equipment_name LIKE ?
+                       OR mode LIKE ?
+                    """
+                    base_sql += " ORDER BY date DESC;"
+                    cur.execute(base_sql, [like] * 7)
+                else:
+                    base_sql += " ORDER BY date DESC;"
+                    cur.execute(base_sql)
                 rows = cur.fetchall()
                 conn.close()
                 q_obs.put(("observations", rows))
@@ -1684,7 +1717,7 @@ def run_gui() -> None:
                 centers = cur.fetchall()
                 cur.execute("SELECT id_equipment, tipo, modelo FROM Equipment ORDER BY id_equipment;")
                 equipments = cur.fetchall()
-                cur.execute("SELECT id_software, version FROM Software ORDER BY id_software;")
+                cur.execute("SELECT id_software, version FROM Software_Obs ORDER BY id_software;")
                 softwares = cur.fetchall()
                 cur.execute("SELECT id_astronomer, name FROM Astronomer ORDER BY id_astronomer;")
                 astronomers = cur.fetchall()
@@ -1697,6 +1730,13 @@ def run_gui() -> None:
 
     obs_refresh_btn = ttk.Button(obs_actions, text="Carregar Listas", command=refresh_reference_lists)
     obs_refresh_btn.pack(side="right", padx=(0, 8))
+
+    ttk.Button(obs_filter_bar, text="Filtrar", command=refresh_observations).pack(side="left", padx=(0, 6))
+    ttk.Button(
+        obs_filter_bar,
+        text="Limpar",
+        command=lambda: (var_obs_filter.set(""), refresh_observations("")),
+    ).pack(side="left")
 
     def add_center() -> None:
         name = var_center_name.get().strip()
@@ -1765,7 +1805,7 @@ def run_gui() -> None:
     def add_software() -> None:
         version = var_software_version.get().strip()
         if not version:
-            messagebox.showwarning("Software", "Preenche a versao.")
+            messagebox.showwarning("Software_Obs", "Preenche a versao.")
             return
         cfg = cfg_from_fields()
 
@@ -1773,21 +1813,21 @@ def run_gui() -> None:
             try:
                 conn = connect(cfg)
                 cur = conn.cursor()
-                cur.execute("SELECT ISNULL(MAX(id_software), 0) + 1 FROM Software;")
+                cur.execute("SELECT ISNULL(MAX(id_software), 0) + 1 FROM Software_Obs;")
                 row = cur.fetchone()
                 new_id = int(row[0] if row else 1)
                 cur.execute(
-                    "INSERT INTO Software (id_software, version) VALUES (?, ?);",
+                    "INSERT INTO Software_Obs (id_software, version) VALUES (?, ?);",
                     new_id,
                     version,
                 )
                 conn.commit()
                 conn.close()
-                q_obs.put(("log", f"Software criado (ID {new_id})."))
+                q_obs.put(("log", f"Software_Obs criado (ID {new_id})."))
                 q_obs.put(("refresh", "software"))
                 q_obs.put(("refresh_refs", None))
             except Exception as ex:
-                q_obs.put(("error", f"Software: {ex}"))
+                q_obs.put(("error", f"Software_Obs: {ex}"))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -2055,6 +2095,9 @@ def run_gui() -> None:
     views_scroll = ttk.Scrollbar(views_table_card, orient="vertical", command=views_tree.yview)
     views_tree.configure(yscrollcommand=views_scroll.set)
     views_scroll.place(in_=views_tree, relx=1.0, rely=0, relheight=1.0, anchor="ne")
+    views_scroll_x = ttk.Scrollbar(views_table_card, orient="horizontal", command=views_tree.xview)
+    views_tree.configure(xscrollcommand=views_scroll_x.set)
+    views_scroll_x.pack(fill="x", padx=8, pady=(0, 8))
 
     def clear_view_tree() -> None:
         views_tree.delete(*views_tree.get_children())
