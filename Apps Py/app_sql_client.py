@@ -503,7 +503,7 @@ def load_neo_mpcorb_csv(conn: pyodbc.Connection, path: str) -> None:
     if not header_fields or "id" not in header_fields or "spkid" not in header_fields:
         has_header = False
         header_fields = DEFAULT_MERGED_HEADER
-        print("[WARN] Header nao identificado. A usar cabecalho pre-definido.")
+        print("[WARN] Header não identificado. A usar cabecalho pre-definido.")
         print("[DEBUG] Primeira linha lida:", header_line[:200])
     header_fields = ensure_unique_header_fields(header_fields)
 
@@ -790,6 +790,7 @@ def run_gui() -> None:
     style.configure("TLabel", background=palette["bg"], foreground=palette["ink"])
     style.configure("Muted.TLabel", foreground=palette["muted"], background=palette["bg"])
     style.configure("Title.TLabel", font=heading_font, foreground=palette["accent"], background=palette["bg"])
+    style.configure("Section.TLabel", font=("Trebuchet MS", 12, "bold"), foreground=palette["ink"], background=palette["bg"])
     style.configure("Subtitle.TLabel", font=("Trebuchet MS", 10), foreground=palette["muted"], background=palette["bg"])
     style.configure("Header.TLabel", font=subheading_font, background=palette["bg"])
     style.configure("TButton", padding=(12, 6))
@@ -797,11 +798,22 @@ def run_gui() -> None:
     style.map("Accent.TButton", background=[("active", palette["accent"])], foreground=[("active", "white")])
     style.configure("TEntry", fieldbackground=palette["card"], foreground=palette["ink"])
     style.configure("TCombobox", fieldbackground=palette["card"], background=palette["card"], foreground=palette["ink"])
+    style.configure("Nav.TButton", padding=(12, 8), anchor="w", background=palette["card"], foreground=palette["ink"])
+    style.configure("NavActive.TButton", padding=(12, 8), anchor="w", background=palette["accent_soft"], foreground=palette["accent"])
+    style.map(
+        "Nav.TButton",
+        background=[("active", palette["accent_soft"])],
+        foreground=[("active", palette["accent"])],
+    )
+    style.configure("TagIdle.TLabel", background=palette["accent_soft"], foreground=palette["accent"], padding=(8, 4))
+    style.configure("TagOk.TLabel", background="#e6f4ea", foreground="#1b6b3a", padding=(8, 4))
+    style.configure("TagBad.TLabel", background="#fde8e8", foreground="#b42318", padding=(8, 4))
     style.configure("TLabelframe", background=palette["card"], bordercolor=palette["border"])
     style.configure("TLabelframe.Label", background=palette["card"], font=subheading_font, foreground=palette["ink"])
     style.configure("Treeview", rowheight=24, background=palette["card"], fieldbackground=palette["card"])
     style.configure("Treeview.Heading", font=subheading_font, background=palette["accent_soft"], foreground=palette["ink"])
     style.map("Treeview", background=[("selected", palette["accent_soft"])], foreground=[("selected", palette["ink"])])
+    style.layout("Main.TNotebook.Tab", [])
 
     q: "queue.Queue[str]" = queue.Queue()
     q_alerts: "queue.Queue[tuple[str, list]]" = queue.Queue()
@@ -815,7 +827,7 @@ def run_gui() -> None:
     var_user = tk.StringVar(value="")
     var_password = tk.StringVar(value="")
     var_database = tk.StringVar(value="")
-    status_var = tk.StringVar(value="Nao ligado.")
+    status_var = tk.StringVar(value="Não ligado.")
 
     csv_default = DEFAULT_FINAL_CSV if os.path.isfile(DEFAULT_FINAL_CSV) else ""
     var_csv = tk.StringVar(value=csv_default)
@@ -830,40 +842,96 @@ def run_gui() -> None:
 
     header = ttk.Frame(root)
     header.pack(fill="x", padx=18, pady=(14, 6))
-    ttk.Label(header, text="NEOs Monitoring System", style="Title.TLabel").pack(anchor="w")
+    header.columnconfigure(0, weight=1)
+    header.columnconfigure(1, weight=0)
+
+    header_left = ttk.Frame(header)
+    header_left.grid(row=0, column=0, sticky="w")
+    ttk.Label(header_left, text="NEOs Monitoring System", style="Title.TLabel").pack(anchor="w")
     ttk.Label(
-        header,
+        header_left,
         text="SQL Client - Gestao, monitorizacao e observacoes",
         style="Subtitle.TLabel",
     ).pack(anchor="w", pady=(2, 0))
 
+    header_right = ttk.Frame(header)
+    header_right.grid(row=0, column=1, sticky="e")
+    today_text = datetime.now().strftime("%Y-%m-%d")
+    ttk.Label(header_right, text=f"Hoje: {today_text}", style="Muted.TLabel").pack(anchor="e")
+    header_status = ttk.Label(header_right, textvariable=status_var, style="TagIdle.TLabel")
+    header_status.pack(anchor="e", pady=(4, 0))
+
     tk.Frame(root, bg=palette["accent"], height=2).pack(fill="x", padx=18, pady=(0, 8))
 
-    main_card = ttk.Frame(root, style="Card.TFrame")
-    main_card.pack(fill="both", expand=True, padx=18, pady=(6, 16))
+    app_body = ttk.Frame(root)
+    app_body.pack(fill="both", expand=True, padx=18, pady=(6, 16))
+    app_body.columnconfigure(1, weight=1)
+    app_body.rowconfigure(0, weight=1)
 
-    notebook = ttk.Notebook(main_card)
+    sidebar = ttk.Frame(app_body, style="Card.TFrame")
+    sidebar.grid(row=0, column=0, sticky="ns", padx=(0, 12))
+    sidebar.columnconfigure(0, weight=1)
+
+    content = ttk.Frame(app_body, style="Card.TFrame")
+    content.grid(row=0, column=1, sticky="nsew")
+    content.columnconfigure(0, weight=1)
+    content.rowconfigure(0, weight=1)
+
+    notebook = ttk.Notebook(content, style="Main.TNotebook")
     tab_conn = ttk.Frame(notebook)
     tab_load = ttk.Frame(notebook)
     tab_gen = ttk.Frame(notebook)
     tab_obs = ttk.Frame(notebook)
     tab_monitor = ttk.Frame(notebook)
+    tab_views = ttk.Frame(notebook)
     tab_alert = ttk.Frame(notebook)
     notebook.add(tab_conn, text="Ligar")
     notebook.add(tab_gen, text="Gerar SQL")
     notebook.add(tab_load, text="Atualizar BD")
-    notebook.add(tab_obs, text="Observacoes")
-    notebook.add(tab_monitor, text="Monitorizacao")
+    notebook.add(tab_obs, text="Observações")
+    notebook.add(tab_monitor, text="Monitorização")
+    notebook.add(tab_views, text="Views")
     notebook.add(tab_alert, text="Alertas")
-    notebook.pack(fill="both", expand=True, padx=10, pady=10)
+    notebook.pack(fill="both", expand=True, padx=12, pady=12)
+
+    ttk.Label(sidebar, text="Navegacao", style="Header.TLabel").pack(anchor="w", padx=12, pady=(14, 6))
+    sidebar_status = ttk.Label(sidebar, textvariable=status_var, style="TagIdle.TLabel")
+    sidebar_status.pack(anchor="w", padx=12, pady=(0, 10))
+
+    nav_buttons: list[ttk.Button] = []
+
+    def select_tab(index: int) -> None:
+        notebook.select(index)
+        for i, btn in enumerate(nav_buttons):
+            btn.configure(style="NavActive.TButton" if i == index else "Nav.TButton")
+
+    for idx, label in enumerate(
+        ["Ligar", "Gerar SQL", "Atualizar BD", "Observações", "Monitorização", "Views", "Alertas"]
+    ):
+        btn = ttk.Button(sidebar, text=label, style="Nav.TButton", command=lambda i=idx: select_tab(i))
+        btn.pack(fill="x", padx=10, pady=4)
+        nav_buttons.append(btn)
+
+    ttk.Separator(sidebar, orient="horizontal").pack(fill="x", padx=10, pady=10)
+    ttk.Label(sidebar, text="Legenda", style="Header.TLabel").pack(anchor="w", padx=12, pady=(0, 6))
+    ttk.Label(sidebar, text="Ligado", style="TagOk.TLabel").pack(anchor="w", padx=12, pady=4)
+    ttk.Label(sidebar, text="Erro", style="TagBad.TLabel").pack(anchor="w", padx=12, pady=4)
+    ttk.Label(sidebar, text="Desligado", style="TagIdle.TLabel").pack(anchor="w", padx=12, pady=4)
+
+    select_tab(0)
 
     # --- Tab Ligar ---
+    conn_header = ttk.Frame(tab_conn)
+    conn_header.pack(fill="x", padx=16, pady=(12, 4))
+    ttk.Label(conn_header, text="Ligação", style="Section.TLabel").pack(side="left")
+    ttk.Label(conn_header, text="Configura credenciais e guarda perfis", style="Muted.TLabel").pack(side="right")
+
     conn_wrap = ttk.Frame(tab_conn)
-    conn_wrap.pack(fill="both", expand=True, padx=16, pady=12)
+    conn_wrap.pack(fill="both", expand=True, padx=16, pady=(4, 12))
     conn_wrap.columnconfigure(0, weight=2)
     conn_wrap.columnconfigure(1, weight=1)
 
-    conn_form = ttk.LabelFrame(conn_wrap, text="Credenciais de Ligacao")
+    conn_form = ttk.LabelFrame(conn_wrap, text="Credenciais de Ligação")
     conn_form.grid(row=0, column=0, sticky="nsew", padx=(0, 12), pady=6)
     conn_form.columnconfigure(1, weight=1)
 
@@ -882,11 +950,14 @@ def run_gui() -> None:
     add_row(3, "Password:", var_password, show="*")
     add_row(4, "Base de Dados:", var_database)
 
-    status_label = ttk.Label(conn_side, textvariable=status_var, style="Muted.TLabel")
-    status_label.grid(row=0, column=0, sticky="w", padx=12, pady=(10, 6))
+    ttk.Label(conn_side, text="Estado da Ligação", style="Header.TLabel").grid(
+        row=0, column=0, sticky="w", padx=12, pady=(12, 4)
+    )
+    status_label = ttk.Label(conn_side, textvariable=status_var, style="TagIdle.TLabel")
+    status_label.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 10))
 
     btn_frame = ttk.Frame(conn_side)
-    btn_frame.grid(row=1, column=0, sticky="we", padx=12, pady=6)
+    btn_frame.grid(row=2, column=0, sticky="we", padx=12, pady=6)
     btn_frame.columnconfigure(0, weight=1)
 
     def cfg_from_fields() -> dict:
@@ -901,25 +972,31 @@ def run_gui() -> None:
     def set_status(msg: str, ok: Optional[bool] = None) -> None:
         status_var.set(msg)
         if ok is True:
-            status_label.configure(foreground="#1b6b3a")
+            status_style = "TagOk.TLabel"
         elif ok is False:
-            status_label.configure(foreground="#b42318")
+            status_style = "TagBad.TLabel"
         else:
-            status_label.configure(foreground=palette["muted"])
+            status_style = "TagIdle.TLabel"
+        status_label.configure(style=status_style)
+        sidebar_status.configure(style=status_style)
+        header_status.configure(style=status_style)
 
     def set_tabs_enabled(connected: bool) -> None:
         state = "normal" if connected else "disabled"
         notebook.tab(2, state=state)  # Atualizar BD
-        notebook.tab(3, state=state)  # Observacoes
-        notebook.tab(4, state=state)  # Monitorizacao
-        notebook.tab(5, state=state)  # Alertas
+        notebook.tab(3, state=state)  # Observações
+        notebook.tab(4, state=state)  # Monitorização
+        notebook.tab(5, state=state)  # Views
+        notebook.tab(6, state=state)  # Alertas
+        for i in range(2, len(nav_buttons)):
+            nav_buttons[i].configure(state=state)
 
     def on_test_connection() -> None:
         cfg = cfg_from_fields()
         try:
             ok = test_connection(cfg)
             if ok:
-                set_status("Ligacao bem-sucedida!", True)
+                set_status("Ligação bem-sucedida!", True)
                 set_tabs_enabled(True)
             else:
                 set_status("Falha na ligacao.", False)
@@ -939,12 +1016,12 @@ def run_gui() -> None:
             if not ok:
                 return
         save_loader_config(cfg, DEFAULT_LOADER_CONFIG)
-        set_status("Configuracao guardada.", True)
+        set_status("Configuração guardada.", True)
 
     def on_load_cfg() -> None:
         cfg = load_loader_config(DEFAULT_LOADER_CONFIG)
         if not cfg:
-            messagebox.showwarning("Config", "Nao existe loader_config.json valido.")
+            messagebox.showwarning("Config", "Não existe loader_config.json valido.")
             return
         var_server.set(cfg.get("server", ""))
         var_port.set(cfg.get("port", ""))
@@ -952,16 +1029,16 @@ def run_gui() -> None:
         var_password.set(cfg.get("password", ""))
         var_database.set(cfg.get("database", "NEOs"))
         var_notify_high.set(bool(cfg.get("notify_high", False)))
-        set_status("Configuracao carregada.", True)
+        set_status("Configuração carregada.", True)
         set_tabs_enabled(False)
 
     ttk.Button(btn_frame, text="Ligar a BD", command=on_test_connection, style="Accent.TButton").grid(
         row=0, column=0, sticky="we", padx=4, pady=(4, 8)
     )
-    ttk.Button(btn_frame, text="Carregar Configuracao", command=on_load_cfg).grid(
+    ttk.Button(btn_frame, text="Carregar Configuração", command=on_load_cfg).grid(
         row=1, column=0, sticky="we", padx=4, pady=4
     )
-    ttk.Button(btn_frame, text="Guardar Configuracao", command=on_save_cfg).grid(
+    ttk.Button(btn_frame, text="Guardar Configuração", command=on_save_cfg).grid(
         row=2, column=0, sticky="we", padx=4, pady=4
     )
     set_tabs_enabled(False)
@@ -974,11 +1051,16 @@ def run_gui() -> None:
         var_password.set(cfg.get("password", ""))
         var_database.set(cfg.get("database", "NEOs"))
         var_notify_high.set(bool(cfg.get("notify_high", False)))
-        set_status("Configuracao carregada.", True)
+        set_status("Configuração carregada.", True)
 
     # --- Tab Atualizar BD ---
+    load_header = ttk.Frame(tab_load)
+    load_header.pack(fill="x", padx=16, pady=(12, 4))
+    ttk.Label(load_header, text="Atualizar Base de Dados", style="Section.TLabel").pack(side="left")
+    ttk.Label(load_header, text="Carrega dados a partir de CSV", style="Muted.TLabel").pack(side="right")
+
     load_wrap = ttk.Frame(tab_load)
-    load_wrap.pack(fill="both", expand=True, padx=16, pady=12)
+    load_wrap.pack(fill="both", expand=True, padx=16, pady=(4, 12))
     load_wrap.columnconfigure(0, weight=2)
     load_wrap.columnconfigure(1, weight=1)
 
@@ -995,7 +1077,7 @@ def run_gui() -> None:
     load_actions.columnconfigure(0, weight=1)
 
     load_status_var = tk.StringVar(value="Pronto.")
-    load_status_label = ttk.Label(load_actions, textvariable=load_status_var, style="Muted.TLabel")
+    load_status_label = ttk.Label(load_actions, textvariable=load_status_var, style="TagIdle.TLabel")
     load_status_label.grid(row=0, column=0, sticky="w", padx=10, pady=(10, 6))
 
     def on_browse() -> None:
@@ -1013,10 +1095,11 @@ def run_gui() -> None:
             messagebox.showwarning("CSV", "Seleciona um ficheiro CSV.")
             return
         if not os.path.isfile(csv_path):
-            messagebox.showerror("CSV", "Ficheiro nao existe.")
+            messagebox.showerror("CSV", "Ficheiro não existe.")
             return
         run_button.configure(state="disabled")
         load_status_var.set("A carregar CSV...")
+        load_status_label.configure(style="TagIdle.TLabel")
         set_status("A carregar CSV...", None)
         output_text.configure(state="normal")
         output_text.insert("end", f"[INFO] A iniciar carregamento: {csv_path}\n")
@@ -1045,6 +1128,7 @@ def run_gui() -> None:
                     run_button.configure(state="normal")
                     set_status("Processo concluido.", True)
                     load_status_var.set("Processo concluido.")
+                    load_status_label.configure(style="TagOk.TLabel")
                 else:
                     output_text.configure(state="normal")
                     output_text.insert("end", msg)
@@ -1052,6 +1136,7 @@ def run_gui() -> None:
                     output_text.configure(state="disabled")
                     if msg.startswith("[ERRO]"):
                         load_status_var.set("Erro no carregamento.")
+                        load_status_label.configure(style="TagBad.TLabel")
         except queue.Empty:
             pass
         root.after(100, poll_queue)
@@ -1072,12 +1157,17 @@ def run_gui() -> None:
     output_text.configure(yscrollcommand=scroll.set)
 
     # --- Tab Gerar SQL ---
+    gen_header = ttk.Frame(tab_gen)
+    gen_header.pack(fill="x", padx=16, pady=(12, 4))
+    ttk.Label(gen_header, text="Gerar SQL", style="Section.TLabel").pack(side="left")
+    ttk.Label(gen_header, text="Gera scripts de carga a partir de CSV", style="Muted.TLabel").pack(side="right")
+
     gen_wrap = ttk.Frame(tab_gen)
-    gen_wrap.pack(fill="both", expand=True, padx=16, pady=12)
+    gen_wrap.pack(fill="both", expand=True, padx=16, pady=(4, 12))
     gen_wrap.columnconfigure(0, weight=2)
     gen_wrap.columnconfigure(1, weight=1)
 
-    gen_card = ttk.LabelFrame(gen_wrap, text="Parametros de Geracao")
+    gen_card = ttk.LabelFrame(gen_wrap, text="Parametros de Geração")
     gen_card.grid(row=0, column=0, sticky="nsew", padx=(0, 12), pady=6)
     gen_card.columnconfigure(1, weight=1)
 
@@ -1093,7 +1183,7 @@ def run_gui() -> None:
     gen_actions.columnconfigure(0, weight=1)
 
     gen_status_var = tk.StringVar(value="Pronto.")
-    gen_status_label = ttk.Label(gen_actions, textvariable=gen_status_var, style="Muted.TLabel")
+    gen_status_label = ttk.Label(gen_actions, textvariable=gen_status_var, style="TagIdle.TLabel")
     gen_status_label.grid(row=0, column=0, sticky="w", padx=10, pady=(10, 6))
 
     def browse_template() -> None:
@@ -1125,7 +1215,7 @@ def run_gui() -> None:
     ttk.Button(gen_card, text="Escolher", command=browse_gen_csv).grid(row=1, column=2, padx=10, pady=8)
     ttk.Button(gen_card, text="Guardar Como", command=browse_output).grid(row=2, column=2, padx=10, pady=8)
 
-    gen_log_card = ttk.LabelFrame(tab_gen, text="Log de Geracao")
+    gen_log_card = ttk.LabelFrame(tab_gen, text="Log de Geração")
     gen_log_card.pack(fill="both", expand=True, padx=16, pady=(0, 12))
     gen_log = tk.Text(gen_log_card, height=16, wrap="word")
     gen_log.pack(fill="both", expand=True, padx=8, pady=8)
@@ -1145,10 +1235,10 @@ def run_gui() -> None:
         csv_path = var_gen_csv.get().strip()
         output_path = var_output.get().strip()
         if not os.path.isfile(template_path):
-            messagebox.showerror("Template", "Template SQL nao existe.")
+            messagebox.showerror("Template", "Template SQL não existe.")
             return
         if not os.path.isfile(csv_path):
-            messagebox.showerror("CSV", "Ficheiro CSV nao existe.")
+            messagebox.showerror("CSV", "Ficheiro CSV não existe.")
             return
         if not output_path:
             messagebox.showwarning("Output", "Define o ficheiro de output.")
@@ -1156,6 +1246,7 @@ def run_gui() -> None:
 
         gen_button.configure(state="disabled")
         gen_status_var.set("A gerar SQL...")
+        gen_status_label.configure(style="TagIdle.TLabel")
         log_gen(f"[INFO] A gerar SQL a partir de {csv_path}")
 
         def worker() -> None:
@@ -1172,12 +1263,14 @@ def run_gui() -> None:
 
     gen_button.configure(command=run_generate_sql)
 
-    # --- Tab Observacoes ---
+    # --- Tab Observações ---
     obs_header = ttk.Frame(tab_obs)
     obs_header.pack(fill="x", padx=16, pady=(12, 6))
-    ttk.Label(obs_header, text="Gestao Observacional", style="Header.TLabel").pack(side="left")
+    ttk.Label(obs_header, text="Gestao Observacional", style="Section.TLabel").pack(side="left")
+    obs_actions = ttk.Frame(obs_header)
+    obs_actions.pack(side="right")
     obs_status_var = tk.StringVar(value="Pronto.")
-    ttk.Label(obs_header, textvariable=obs_status_var, style="Muted.TLabel").pack(side="right")
+    ttk.Label(obs_actions, textvariable=obs_status_var, style="Muted.TLabel").pack(side="right")
 
     obs_notebook = ttk.Notebook(tab_obs)
     obs_notebook.pack(fill="both", expand=True, padx=12, pady=8)
@@ -1190,8 +1283,8 @@ def run_gui() -> None:
     obs_notebook.add(tab_center, text="Centros")
     obs_notebook.add(tab_equipment, text="Equipamentos")
     obs_notebook.add(tab_software, text="Software")
-    obs_notebook.add(tab_astronomer, text="Astronomos")
-    obs_notebook.add(tab_observation, text="Observacoes")
+    obs_notebook.add(tab_astronomer, text="Astrónomos")
+    obs_notebook.add(tab_observation, text="Observações")
 
     def parse_combo_id(value: str) -> Optional[int]:
         if not value:
@@ -1212,6 +1305,23 @@ def run_gui() -> None:
                 pass
         return None
 
+    stripe_even = palette["card"]
+    stripe_odd = "#f7f3ed"
+
+    def apply_tree_stripes(tree: ttk.Treeview) -> None:
+        tree.tag_configure("even", background=stripe_even)
+        tree.tag_configure("odd", background=stripe_odd)
+
+    def insert_striped(
+        tree: ttk.Treeview,
+        values: tuple[Any, ...],
+        idx: int,
+        extra_tags: tuple[str, ...] = (),
+    ) -> None:
+        tag = "even" if idx % 2 == 0 else "odd"
+        tags = (tag,) + extra_tags
+        tree.insert("", "end", values=values, tags=tags)
+
     # ---- Centros ----
     var_center_name = tk.StringVar(value="")
     var_center_location = tk.StringVar(value="")
@@ -1226,7 +1336,7 @@ def run_gui() -> None:
     center_form.columnconfigure(1, weight=1)
     ttk.Label(center_form, text="Nome:").grid(row=0, column=0, sticky="w", padx=10, pady=8)
     ttk.Entry(center_form, textvariable=var_center_name).grid(row=0, column=1, sticky="we", padx=10, pady=8)
-    ttk.Label(center_form, text="Localizacao:").grid(row=1, column=0, sticky="w", padx=10, pady=8)
+    ttk.Label(center_form, text="Localização:").grid(row=1, column=0, sticky="w", padx=10, pady=8)
     ttk.Entry(center_form, textvariable=var_center_location).grid(row=1, column=1, sticky="we", padx=10, pady=8)
 
     center_btns = ttk.Frame(center_form)
@@ -1237,9 +1347,10 @@ def run_gui() -> None:
     center_list = ttk.LabelFrame(center_layout, text="Lista de Centros")
     center_list.grid(row=0, column=1, sticky="nsew", pady=6)
     center_tree = ttk.Treeview(center_list, columns=("id_center", "name", "location"), show="headings", height=12)
+    apply_tree_stripes(center_tree)
     center_tree.heading("id_center", text="ID")
     center_tree.heading("name", text="Nome")
-    center_tree.heading("location", text="Localizacao")
+    center_tree.heading("location", text="Localização")
     center_tree.column("id_center", width=80, anchor="w")
     center_tree.column("name", width=240, anchor="w")
     center_tree.column("location", width=240, anchor="w")
@@ -1283,6 +1394,7 @@ def run_gui() -> None:
         show="headings",
         height=12,
     )
+    apply_tree_stripes(equipment_tree)
     equipment_tree.heading("id_equipment", text="ID")
     equipment_tree.heading("tipo", text="Tipo")
     equipment_tree.heading("modelo", text="Modelo")
@@ -1308,7 +1420,7 @@ def run_gui() -> None:
     software_form = ttk.LabelFrame(software_layout, text="Novo Software")
     software_form.grid(row=0, column=0, sticky="nsew", padx=(0, 12), pady=6)
     software_form.columnconfigure(1, weight=1)
-    ttk.Label(software_form, text="Versao:").grid(row=0, column=0, sticky="w", padx=10, pady=8)
+    ttk.Label(software_form, text="Versão:").grid(row=0, column=0, sticky="w", padx=10, pady=8)
     ttk.Entry(software_form, textvariable=var_software_version).grid(row=0, column=1, sticky="we", padx=10, pady=8)
 
     software_btns = ttk.Frame(software_form)
@@ -1319,8 +1431,9 @@ def run_gui() -> None:
     software_list = ttk.LabelFrame(software_layout, text="Lista de Software")
     software_list.grid(row=0, column=1, sticky="nsew", pady=6)
     software_tree = ttk.Treeview(software_list, columns=("id_software", "version"), show="headings", height=12)
+    apply_tree_stripes(software_tree)
     software_tree.heading("id_software", text="ID")
-    software_tree.heading("version", text="Versao")
+    software_tree.heading("version", text="Versão")
     software_tree.column("id_software", width=80, anchor="w")
     software_tree.column("version", width=260, anchor="w")
     software_tree.pack(fill="both", expand=True, padx=8, pady=8)
@@ -1329,7 +1442,7 @@ def run_gui() -> None:
     software_tree.configure(yscrollcommand=software_scroll.set)
     software_scroll.place(in_=software_tree, relx=1.0, rely=0, relheight=1.0, anchor="ne")
 
-    # ---- Astronomos ----
+    # ---- Astrónomos ----
     var_astronomer_name = tk.StringVar(value="")
     var_astronomer_aff = tk.StringVar(value="")
 
@@ -1338,7 +1451,7 @@ def run_gui() -> None:
     astronomer_layout.columnconfigure(0, weight=1)
     astronomer_layout.columnconfigure(1, weight=2)
 
-    astronomer_form = ttk.LabelFrame(astronomer_layout, text="Novo Astronomo")
+    astronomer_form = ttk.LabelFrame(astronomer_layout, text="Novo Astrónomo")
     astronomer_form.grid(row=0, column=0, sticky="nsew", padx=(0, 12), pady=6)
     astronomer_form.columnconfigure(1, weight=1)
     ttk.Label(astronomer_form, text="Nome:").grid(row=0, column=0, sticky="w", padx=10, pady=8)
@@ -1351,7 +1464,7 @@ def run_gui() -> None:
     astronomer_btns.columnconfigure(0, weight=1)
     astronomer_btns.columnconfigure(1, weight=1)
 
-    astronomer_list = ttk.LabelFrame(astronomer_layout, text="Lista de Astronomos")
+    astronomer_list = ttk.LabelFrame(astronomer_layout, text="Lista de Astrónomos")
     astronomer_list.grid(row=0, column=1, sticky="nsew", pady=6)
     astronomer_tree = ttk.Treeview(
         astronomer_list,
@@ -1359,6 +1472,7 @@ def run_gui() -> None:
         show="headings",
         height=12,
     )
+    apply_tree_stripes(astronomer_tree)
     astronomer_tree.heading("id_astronomer", text="ID")
     astronomer_tree.heading("name", text="Nome")
     astronomer_tree.heading("affiliation", text="Afiliacao")
@@ -1371,7 +1485,7 @@ def run_gui() -> None:
     astronomer_tree.configure(yscrollcommand=astronomer_scroll.set)
     astronomer_scroll.place(in_=astronomer_tree, relx=1.0, rely=0, relheight=1.0, anchor="ne")
 
-    # ---- Observacoes ----
+    # ---- Observações ----
     var_obs_date = tk.StringVar(value=datetime.now().strftime("%Y-%m-%d %H:%M"))
     var_obs_duration = tk.StringVar(value="")
     obs_mode_values = ["Optica", "Radar", "Infravermelho", "Fotometria", "Espectroscopia", "Tracking"]
@@ -1386,13 +1500,13 @@ def run_gui() -> None:
     observation_layout.columnconfigure(0, weight=1)
     observation_layout.columnconfigure(1, weight=2)
 
-    observation_form = ttk.LabelFrame(observation_layout, text="Nova Observacao")
+    observation_form = ttk.LabelFrame(observation_layout, text="Nova Observação")
     observation_form.grid(row=0, column=0, sticky="nsew", padx=(0, 12), pady=6)
     observation_form.columnconfigure(1, weight=1)
 
     ttk.Label(observation_form, text="Data (YYYY-MM-DD HH:MM):").grid(row=0, column=0, sticky="w", padx=10, pady=8)
     ttk.Entry(observation_form, textvariable=var_obs_date).grid(row=0, column=1, sticky="we", padx=10, pady=8)
-    ttk.Label(observation_form, text="Duracao (min):").grid(row=1, column=0, sticky="w", padx=10, pady=8)
+    ttk.Label(observation_form, text="Duração (min):").grid(row=1, column=0, sticky="w", padx=10, pady=8)
     ttk.Entry(observation_form, textvariable=var_obs_duration).grid(row=1, column=1, sticky="we", padx=10, pady=8)
     ttk.Label(observation_form, text="Modo:").grid(row=2, column=0, sticky="w", padx=10, pady=8)
     obs_mode_combo = ttk.Combobox(
@@ -1405,7 +1519,7 @@ def run_gui() -> None:
     obs_mode_combo.grid(row=2, column=1, sticky="we", padx=10, pady=8)
     ttk.Label(observation_form, text="ID Asteroide:").grid(row=3, column=0, sticky="w", padx=10, pady=8)
     ttk.Entry(observation_form, textvariable=var_obs_asteroid).grid(row=3, column=1, sticky="we", padx=10, pady=8)
-    ttk.Label(observation_form, text="Astronomo:").grid(row=4, column=0, sticky="w", padx=10, pady=8)
+    ttk.Label(observation_form, text="Astrónomo:").grid(row=4, column=0, sticky="w", padx=10, pady=8)
     obs_astronomer_combo = ttk.Combobox(observation_form, textvariable=var_obs_astronomer, state="readonly", width=28)
     obs_astronomer_combo.grid(row=4, column=1, sticky="we", padx=10, pady=8)
     ttk.Label(observation_form, text="Software:").grid(row=5, column=0, sticky="w", padx=10, pady=8)
@@ -1420,7 +1534,7 @@ def run_gui() -> None:
     observation_btns.columnconfigure(0, weight=1)
     observation_btns.columnconfigure(1, weight=1)
 
-    observation_list = ttk.LabelFrame(observation_layout, text="Lista de Observacoes")
+    observation_list = ttk.LabelFrame(observation_layout, text="Lista de Observações")
     observation_list.grid(row=0, column=1, sticky="nsew", pady=6)
     observation_tree = ttk.Treeview(
         observation_list,
@@ -1428,12 +1542,13 @@ def run_gui() -> None:
         show="headings",
         height=12,
     )
+    apply_tree_stripes(observation_tree)
     observation_tree.heading("id_observation", text="ID")
     observation_tree.heading("date", text="Data")
-    observation_tree.heading("duration", text="Duracao")
+    observation_tree.heading("duration", text="Duração")
     observation_tree.heading("mode", text="Modo")
     observation_tree.heading("asteroid", text="Asteroide")
-    observation_tree.heading("astronomer", text="Astronomo")
+    observation_tree.heading("astronomer", text="Astrónomo")
     observation_tree.heading("software", text="Software")
     observation_tree.heading("equipment", text="Equipamento")
     observation_tree.heading("center", text="Centro")
@@ -1524,7 +1639,7 @@ def run_gui() -> None:
                 conn.close()
                 q_obs.put(("astronomers", rows))
             except Exception as ex:
-                q_obs.put(("error", f"Astronomos: {ex}"))
+                q_obs.put(("error", f"Astrónomos: {ex}"))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -1537,29 +1652,24 @@ def run_gui() -> None:
                 cur = conn.cursor()
                 cur.execute("""
                     SELECT
-                        o.id_observation,
-                        o.date,
-                        o.duration,
-                        o.mode,
-                        o.id_internal,
-                        COALESCE(a.full_name, ''),
-                        COALESCE(astr.name, ''),
-                        COALESCE(s.version, ''),
-                        COALESCE(e.tipo + ' ' + e.modelo, ''),
-                        COALESCE(c.name, '')
-                    FROM Observation o
-                    LEFT JOIN Asteroid a ON a.id_internal = o.id_internal
-                    LEFT JOIN Astronomer astr ON astr.id_astronomer = o.id_astronomer
-                    LEFT JOIN Software s ON s.id_software = o.id_software
-                    LEFT JOIN Equipment e ON e.id_equipment = o.id_equipment
-                    LEFT JOIN Center_observation c ON c.id_center = e.id_center
-                    ORDER BY o.date DESC;
+                        id_observation,
+                        date,
+                        duration,
+                        mode,
+                        id_internal,
+                        asteroid_name,
+                        astronomer_name,
+                        software_version,
+                        equipment_name,
+                        center_name
+                    FROM vw_Observations_Detail
+                    ORDER BY date DESC;
                 """)
                 rows = cur.fetchall()
                 conn.close()
                 q_obs.put(("observations", rows))
             except Exception as ex:
-                q_obs.put(("error", f"Observacoes: {ex}"))
+                q_obs.put(("error", f"Observações: {ex}"))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -1584,6 +1694,9 @@ def run_gui() -> None:
                 q_obs.put(("error", f"Listas: {ex}"))
 
         threading.Thread(target=worker, daemon=True).start()
+
+    obs_refresh_btn = ttk.Button(obs_actions, text="Carregar Listas", command=refresh_reference_lists)
+    obs_refresh_btn.pack(side="right", padx=(0, 8))
 
     def add_center() -> None:
         name = var_center_name.get().strip()
@@ -1682,7 +1795,7 @@ def run_gui() -> None:
         name = var_astronomer_name.get().strip()
         affiliation = var_astronomer_aff.get().strip()
         if not name or not affiliation:
-            messagebox.showwarning("Astronomo", "Preenche nome e afiliacao.")
+            messagebox.showwarning("Astrónomo", "Preenche nome e afiliacao.")
             return
         cfg = cfg_from_fields()
 
@@ -1701,11 +1814,11 @@ def run_gui() -> None:
                 )
                 conn.commit()
                 conn.close()
-                q_obs.put(("log", f"Astronomo criado (ID {new_id})."))
+                q_obs.put(("log", f"Astrónomo criado (ID {new_id})."))
                 q_obs.put(("refresh", "astronomers"))
                 q_obs.put(("refresh_refs", None))
             except Exception as ex:
-                q_obs.put(("error", f"Astronomo: {ex}"))
+                q_obs.put(("error", f"Astrónomo: {ex}"))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -1718,10 +1831,10 @@ def run_gui() -> None:
         software_id = parse_combo_id(var_obs_software.get())
         equipment_id = parse_combo_id(var_obs_equipment.get())
         if not date_val or duration_val is None or not mode_val or asteroid_id is None:
-            messagebox.showwarning("Observacao", "Preenche data, duracao, modo e ID do asteroide.")
+            messagebox.showwarning("Observação", "Preenche data, duracao, modo e ID do asteroide.")
             return
         if astronomer_id is None or software_id is None or equipment_id is None:
-            messagebox.showwarning("Observacao", "Seleciona astronomo, software e equipamento.")
+            messagebox.showwarning("Observação", "Seleciona astronomo, software e equipamento.")
             return
         cfg = cfg_from_fields()
 
@@ -1750,10 +1863,10 @@ def run_gui() -> None:
                 )
                 conn.commit()
                 conn.close()
-                q_obs.put(("log", f"Observacao criada (ID {new_id})."))
+                q_obs.put(("log", f"Observação criada (ID {new_id})."))
                 q_obs.put(("refresh", "observations"))
             except Exception as ex:
-                q_obs.put(("error", f"Observacao: {ex}"))
+                q_obs.put(("error", f"Observação: {ex}"))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -1804,31 +1917,30 @@ def run_gui() -> None:
                 kind, payload = q_obs.get_nowait()
                 if kind == "centers":
                     clear_obs_tree(center_tree)
-                    for row in cast(list[tuple[Any, ...]], payload):
-                        center_tree.insert("", "end", values=(row[0], row[1], row[2]))
+                    for idx, row in enumerate(cast(list[tuple[Any, ...]], payload)):
+                        insert_striped(center_tree, (row[0], row[1], row[2]), idx)
                 elif kind == "equipments":
                     clear_obs_tree(equipment_tree)
-                    for row in cast(list[tuple[Any, ...]], payload):
-                        equipment_tree.insert("", "end", values=(row[0], row[1], row[2], row[3]))
+                    for idx, row in enumerate(cast(list[tuple[Any, ...]], payload)):
+                        insert_striped(equipment_tree, (row[0], row[1], row[2], row[3]), idx)
                 elif kind == "software":
                     clear_obs_tree(software_tree)
-                    for row in cast(list[tuple[Any, ...]], payload):
-                        software_tree.insert("", "end", values=(row[0], row[1]))
+                    for idx, row in enumerate(cast(list[tuple[Any, ...]], payload)):
+                        insert_striped(software_tree, (row[0], row[1]), idx)
                 elif kind == "astronomers":
                     clear_obs_tree(astronomer_tree)
-                    for row in cast(list[tuple[Any, ...]], payload):
-                        astronomer_tree.insert("", "end", values=(row[0], row[1], row[2]))
+                    for idx, row in enumerate(cast(list[tuple[Any, ...]], payload)):
+                        insert_striped(astronomer_tree, (row[0], row[1], row[2]), idx)
                 elif kind == "observations":
                     clear_obs_tree(observation_tree)
-                    for row in cast(list[tuple[Any, ...]], payload):
+                    for idx, row in enumerate(cast(list[tuple[Any, ...]], payload)):
                         date_val = row[1]
                         date_txt = date_val.strftime("%Y-%m-%d %H:%M") if hasattr(date_val, "strftime") else str(date_val)
                         asteroid_txt = row[5] if row[5] else f"ID {row[4]}"
                         equipment_txt = row[8]
-                        observation_tree.insert(
-                            "",
-                            "end",
-                            values=(
+                        insert_striped(
+                            observation_tree,
+                            (
                                 row[0],
                                 date_txt,
                                 row[2],
@@ -1839,6 +1951,7 @@ def run_gui() -> None:
                                 equipment_txt,
                                 row[9],
                             ),
+                            idx,
                         )
                 elif kind == "refs":
                     centers, equipments, softwares, astronomers = cast(
@@ -1878,14 +1991,107 @@ def run_gui() -> None:
                     obs_status_var.set(str(payload))
                 elif kind == "error":
                     obs_status_var.set(str(payload))
-                    messagebox.showerror("Observacoes", str(payload))
+                    messagebox.showerror("Observações", str(payload))
+                elif kind == "view_rows":
+                    columns, rows = cast(tuple[list[str], list[tuple[Any, ...]]], payload)
+                    views_tree.configure(columns=columns)
+                    for col in columns:
+                        views_tree.heading(col, text=col)
+                        views_tree.column(col, width=140, anchor="w")
+                    clear_view_tree()
+                    for idx, row in enumerate(rows):
+                        insert_striped(views_tree, tuple(row), idx)
+                    views_status.configure(text=f"{len(rows)} linhas", style="TagOk.TLabel")
+                elif kind == "view_error":
+                    views_status.configure(text="Erro a carregar", style="TagBad.TLabel")
+                    messagebox.showerror("Views", str(payload))
         except queue.Empty:
             pass
         root.after(200, poll_obs_queue)
 
-    # --- Tab Monitorizacao ---
+    # --- Tab Views ---
+    views_header = ttk.Frame(tab_views)
+    views_header.pack(fill="x", padx=16, pady=(12, 4))
+    ttk.Label(views_header, text="Views", style="Section.TLabel").pack(side="left")
+    ttk.Label(views_header, text="Consultas prontas para resultados rapidos", style="Muted.TLabel").pack(side="right")
+
+    views_wrap = ttk.Frame(tab_views)
+    views_wrap.pack(fill="both", expand=True, padx=16, pady=(4, 12))
+    views_wrap.columnconfigure(0, weight=1)
+
+    views_controls = ttk.LabelFrame(views_wrap, text="Selecionar View")
+    views_controls.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+    views_controls.columnconfigure(1, weight=1)
+
+    view_names = [
+        "vw_Last5Asteroids",
+        "vw_LatestAsteroids",
+        "vw_PHA_NEO",
+        "vw_PHA_Only",
+        "vw_NEO_Only",
+        "vw_TopLargestPHA",
+        "vw_CentersMostObservations",
+        "vw_Monitor_Stats",
+        "vw_PHA_Over100",
+        "vw_Discovery_Trend",
+        "vw_Observations_Detail",
+        "vw_Alerts_Detail",
+    ]
+    var_view = tk.StringVar(value=view_names[0])
+    ttk.Label(views_controls, text="View:").grid(row=0, column=0, sticky="w", padx=10, pady=8)
+    view_combo = ttk.Combobox(views_controls, textvariable=var_view, state="readonly", values=view_names)
+    view_combo.grid(row=0, column=1, sticky="we", padx=10, pady=8)
+
+    views_status = ttk.Label(views_controls, text="Pronto.", style="TagIdle.TLabel")
+    views_status.grid(row=0, column=2, sticky="e", padx=10, pady=8)
+
+    views_table_card = ttk.LabelFrame(views_wrap, text="Resultados")
+    views_table_card.grid(row=1, column=0, sticky="nsew")
+    views_wrap.rowconfigure(1, weight=1)
+
+    views_tree = ttk.Treeview(views_table_card, show="headings", height=14)
+    apply_tree_stripes(views_tree)
+    views_tree.pack(fill="both", expand=True, padx=8, pady=8)
+    views_scroll = ttk.Scrollbar(views_table_card, orient="vertical", command=views_tree.yview)
+    views_tree.configure(yscrollcommand=views_scroll.set)
+    views_scroll.place(in_=views_tree, relx=1.0, rely=0, relheight=1.0, anchor="ne")
+
+    def clear_view_tree() -> None:
+        views_tree.delete(*views_tree.get_children())
+
+    def load_view_data() -> None:
+        cfg = cfg_from_fields()
+        view_name = var_view.get().strip()
+        if not view_name:
+            return
+        views_status.configure(text="A carregar...", style="TagIdle.TLabel")
+
+        def worker() -> None:
+            try:
+                conn = connect(cfg)
+                cur = conn.cursor()
+                cur.execute(f"SELECT * FROM {view_name};")
+                rows = cur.fetchall()
+                columns = [col[0] for col in cur.description] if cur.description else []
+                conn.close()
+                q_obs.put(("view_rows", (columns, rows)))
+            except Exception as ex:
+                q_obs.put(("view_error", str(ex)))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    ttk.Button(views_controls, text="Carregar View", command=load_view_data, style="Accent.TButton").grid(
+        row=0, column=3, sticky="e", padx=10, pady=8
+    )
+
+    # --- Tab Monitorização ---
+    monitor_header = ttk.Frame(tab_monitor)
+    monitor_header.pack(fill="x", padx=16, pady=(12, 4))
+    ttk.Label(monitor_header, text="Monitorização", style="Section.TLabel").pack(side="left")
+    ttk.Label(monitor_header, text="Indicadores e tendencias", style="Muted.TLabel").pack(side="right")
+
     monitor_wrap = ttk.Frame(tab_monitor)
-    monitor_wrap.pack(fill="both", expand=True, padx=16, pady=12)
+    monitor_wrap.pack(fill="both", expand=True, padx=16, pady=(4, 12))
 
     monitor_card = ttk.Frame(monitor_wrap, style="Card.TFrame")
     monitor_card.pack(fill="both", expand=True)
@@ -1910,7 +2116,7 @@ def run_gui() -> None:
 
     mon_top = ttk.Frame(monitor_body)
     mon_top.pack(fill="x", padx=10, pady=8)
-    ttk.Label(mon_top, text="Monitorizacao e estatisticas", style="Header.TLabel").pack(side="left")
+    ttk.Label(mon_top, text="Monitorização e estatisticas", style="Header.TLabel").pack(side="left")
 
     stats_frame = ttk.LabelFrame(monitor_body, text="Resumo geral")
     stats_frame.pack(fill="x", padx=10, pady=(0, 8))
@@ -1960,7 +2166,7 @@ def run_gui() -> None:
     precision_block.grid_columnconfigure(0, weight=1)
     discovery_block.grid_columnconfigure(0, weight=1)
 
-    ttk.Label(precision_block, text="Precisao orbital (RMS medio por ano)").grid(row=0, column=0, sticky="w")
+    ttk.Label(precision_block, text="Precisão orbital (RMS médio por ano)").grid(row=0, column=0, sticky="w")
     ttk.Label(discovery_block, text="Novas descobertas (por mes)").grid(row=0, column=0, sticky="w")
     precision_canvas = tk.Canvas(precision_block, height=140, bg="white", highlightthickness=1, highlightbackground="#d0d0d0")
     discovery_canvas = tk.Canvas(discovery_block, height=140, bg="white", highlightthickness=1, highlightbackground="#d0d0d0")
@@ -1972,14 +2178,15 @@ def run_gui() -> None:
     tables_frame.grid_columnconfigure(0, weight=1, uniform="tbl")
     tables_frame.grid_columnconfigure(1, weight=1, uniform="tbl")
 
-    precision_box = ttk.LabelFrame(tables_frame, text="Detalhe: Precisao orbital (RMS medio por ano)")
+    precision_box = ttk.LabelFrame(tables_frame, text="Detalhe: Precisão orbital (RMS médio por ano)")
     discovery_box = ttk.LabelFrame(tables_frame, text="Detalhe: Novas descobertas (por mes)")
-    latest_box = ttk.LabelFrame(tables_frame, text="Ultimas descobertas")
+    latest_box = ttk.LabelFrame(tables_frame, text="Últimas descobertas")
     precision_box.grid(row=0, column=0, sticky="nsew", padx=(0, 6), pady=(0, 8))
     discovery_box.grid(row=0, column=1, sticky="nsew", padx=(6, 0), pady=(0, 8))
     latest_box.grid(row=1, column=0, columnspan=2, sticky="nsew")
 
     precision_tree = ttk.Treeview(precision_box, columns=("year", "count", "avg_rms"), show="headings", height=8)
+    apply_tree_stripes(precision_tree)
     precision_tree.heading("year", text="Ano")
     precision_tree.heading("count", text="Orbits")
     precision_tree.heading("avg_rms", text="RMS Medio")
@@ -1989,13 +2196,15 @@ def run_gui() -> None:
     precision_tree.pack(fill="x", padx=6, pady=6)
 
     discovery_tree = ttk.Treeview(discovery_box, columns=("period", "count"), show="headings", height=8)
-    discovery_tree.heading("period", text="Periodo (YYYY-MM)")
+    apply_tree_stripes(discovery_tree)
+    discovery_tree.heading("period", text="Período (YYYY-MM)")
     discovery_tree.heading("count", text="Novas Descobertas")
     discovery_tree.column("period", width=120, anchor="w")
     discovery_tree.column("count", width=150, anchor="w")
     discovery_tree.pack(fill="x", padx=6, pady=6)
 
     latest_tree = ttk.Treeview(latest_box, columns=("id_internal", "full_name", "created_at"), show="headings", height=8)
+    apply_tree_stripes(latest_tree)
     latest_tree.heading("id_internal", text="ID")
     latest_tree.heading("full_name", text="Nome")
     latest_tree.heading("created_at", text="Criado Em")
@@ -2050,29 +2259,22 @@ def run_gui() -> None:
             try:
                 conn = connect(cfg)
                 cur = conn.cursor()
-                cur.execute("SELECT COUNT(*) FROM Asteroid;")
+                cur.execute("""
+                    SELECT total_asteroids, total_orbits, total_alerts, high_alerts
+                    FROM vw_Monitor_Stats;
+                """)
                 row = cur.fetchone()
-                ast_count = int(row[0] if row else 0)
-                cur.execute("SELECT COUNT(*) FROM Orbit;")
-                row = cur.fetchone()
-                orbit_count = int(row[0] if row else 0)
-                cur.execute("SELECT COUNT(*) FROM Alert;")
-                row = cur.fetchone()
-                alert_count = int(row[0] if row else 0)
-                cur.execute("SELECT COUNT(*) FROM Alert WHERE id_priority = 1;")
-                row = cur.fetchone()
-                high_count = int(row[0] if row else 0)
+                ast_count = int(row[0] if row and row[0] is not None else 0)
+                orbit_count = int(row[1] if row and row[1] is not None else 0)
+                alert_count = int(row[2] if row and row[2] is not None else 0)
+                high_count = int(row[3] if row and row[3] is not None else 0)
 
                 cur.execute("SELECT red_alerts, orange_alerts FROM vw_Alert_Stats;")
                 row = cur.fetchone()
                 red_count = int(row[0] if row and row[0] is not None else 0)
                 orange_count = int(row[1] if row and row[1] is not None else 0)
 
-                cur.execute("""
-                    SELECT COUNT(*)
-                    FROM Asteroid
-                    WHERE pha_flag = 'Y' AND diameter IS NOT NULL AND diameter > 0.1;
-                """)
+                cur.execute("SELECT pha_over_100 FROM vw_PHA_Over100;")
                 row = cur.fetchone()
                 pha_over = int(row[0] if row and row[0] is not None else 0)
 
@@ -2092,20 +2294,15 @@ def run_gui() -> None:
                 precision_rows = cur.fetchall()
 
                 cur.execute("""
-                    SELECT TOP 12
-                        FORMAT(created_at, 'yyyy-MM') AS period,
-                        COUNT(*) AS cnt
-                    FROM Asteroid
-                    WHERE created_at IS NOT NULL
-                    GROUP BY FORMAT(created_at, 'yyyy-MM')
+                    SELECT TOP 12 period, cnt
+                    FROM vw_Discovery_Trend
                     ORDER BY period DESC;
                 """)
                 discovery_rows = cur.fetchall()
 
                 cur.execute("""
-                    SELECT TOP 10 id_internal, full_name, created_at
-                    FROM Asteroid
-                    ORDER BY created_at DESC;
+                    SELECT id_internal, full_name, created_at
+                    FROM vw_LatestAsteroids;
                 """)
                 latest_rows = cur.fetchall()
                 conn.close()
@@ -2152,32 +2349,32 @@ def run_gui() -> None:
         clear_tree(precision_tree)
         precision_labels = []
         precision_vals = []
-        for row in precision_rows:
+        for idx, row in enumerate(precision_rows):
             yr, cnt, avg_rms = row
             avg_txt = f"{avg_rms:.4f}" if avg_rms is not None else "-"
-            precision_tree.insert("", "end", values=(yr, cnt, avg_txt))
+            insert_striped(precision_tree, (yr, cnt, avg_txt), idx)
             precision_labels.append(str(yr))
             precision_vals.append(avg_rms if avg_rms is not None else 0.0)
 
         clear_tree(discovery_tree)
         discovery_labels = []
         discovery_vals = []
-        for row in discovery_rows:
-            discovery_tree.insert("", "end", values=(row[0], row[1]))
+        for idx, row in enumerate(discovery_rows):
+            insert_striped(discovery_tree, (row[0], row[1]), idx)
             discovery_labels.append(str(row[0]))
             discovery_vals.append(float(row[1]))
 
         clear_tree(latest_tree)
-        for row in latest_rows:
+        for idx, row in enumerate(latest_rows):
             created = row[2]
             created_txt = created.strftime("%Y-%m-%d") if hasattr(created, "strftime") else str(created)
-            latest_tree.insert("", "end", values=(row[0], row[1], created_txt))
+            insert_striped(latest_tree, (row[0], row[1], created_txt), idx)
 
         trend_cache["precision"] = (list(reversed(precision_labels)), list(reversed(precision_vals)))
         trend_cache["discovery"] = (list(reversed(discovery_labels)), list(reversed(discovery_vals)))
         refresh_charts()
 
-    ttk.Button(mon_top, text="Atualizar Estatisticas", command=refresh_monitor).pack(side="right")
+    ttk.Button(mon_top, text="Atualizar Estatísticas", command=refresh_monitor).pack(side="right")
 
     def poll_monitor_queue() -> None:
         try:
@@ -2196,8 +2393,13 @@ def run_gui() -> None:
     poll_monitor_queue()
 
     # --- Tab Alertas ---
+    alert_header = ttk.Frame(tab_alert)
+    alert_header.pack(fill="x", padx=16, pady=(12, 4))
+    ttk.Label(alert_header, text="Alertas", style="Section.TLabel").pack(side="left")
+    ttk.Label(alert_header, text="Filtra, monitoriza e simula eventos", style="Muted.TLabel").pack(side="right")
+
     alert_wrap = ttk.Frame(tab_alert)
-    alert_wrap.pack(fill="both", expand=True, padx=16, pady=12)
+    alert_wrap.pack(fill="both", expand=True, padx=16, pady=(4, 12))
 
     filter_frame = ttk.LabelFrame(alert_wrap, text="Filtros e Acoes")
     filter_frame.pack(fill="x", pady=(0, 10))
@@ -2237,6 +2439,11 @@ def run_gui() -> None:
         show="headings",
         height=12,
     )
+    apply_tree_stripes(alert_tree)
+    alert_tree.tag_configure("level_red", foreground="#b42318")
+    alert_tree.tag_configure("level_orange", foreground="#b54708")
+    alert_tree.tag_configure("level_yellow", foreground="#8a6a00")
+    alert_tree.tag_configure("level_green", foreground="#1b6b3a")
     for col, title, width in (
         ("id_alert", "ID", 70),
         ("data_generation", "Data", 160),
@@ -2256,7 +2463,7 @@ def run_gui() -> None:
     alert_tree.configure(xscrollcommand=alert_scroll_x.set)
     alert_scroll_x.pack(fill="x", padx=8, pady=(0, 8))
 
-    alert_log_card = ttk.LabelFrame(alert_wrap, text="Historico")
+    alert_log_card = ttk.LabelFrame(alert_wrap, text="Histórico")
     alert_log_card.pack(fill="x")
     alert_log = tk.Text(alert_log_card, height=6, wrap="word")
     alert_log.pack(fill="x", padx=8, pady=8)
@@ -2308,28 +2515,27 @@ def run_gui() -> None:
                 where = []
                 params = []
                 if priority_id is not None:
-                    where.append("a.id_priority = ?")
+                    where.append("id_priority = ?")
                     params.append(priority_id)
                 if level_id is not None:
-                    where.append("a.id_level = ?")
+                    where.append("id_level = ?")
                     params.append(level_id)
                 if active_only:
-                    where.append("a.data_generation >= DATEADD(DAY, -30, SYSDATETIME())")
+                    where.append("data_generation >= DATEADD(DAY, -30, SYSDATETIME())")
                 where_sql = " WHERE " + " AND ".join(where) if where else ""
                 sql = f"""
                     SELECT
-                        a.id_alert,
-                        a.data_generation,
-                        COALESCE(p.name, CONCAT('ID ', a.id_priority)),
-                        COALESCE(l.description, CONCAT('ID ', a.id_level)),
-                        COALESCE(ast.full_name, CONCAT('ID ', a.id_internal)),
-                        a.criteria_trigger
-                    FROM Alert a
-                    LEFT JOIN Priority p ON p.id_priority = a.id_priority
-                    LEFT JOIN Level l ON l.id_level = a.id_level
-                    LEFT JOIN Asteroid ast ON ast.id_internal = a.id_internal
+                        id_alert,
+                        data_generation,
+                        priority_name,
+                        level_description,
+                        asteroid_name,
+                        criteria_trigger,
+                        id_priority,
+                        id_level
+                    FROM vw_Alerts_Detail
                     {where_sql}
-                    ORDER BY a.data_generation DESC;
+                    ORDER BY data_generation DESC;
                 """
                 cur.execute(sql, params)
                 rows = cur.fetchall()
@@ -2356,7 +2562,7 @@ def run_gui() -> None:
                 """)
                 row = cur.fetchone()
                 if not row:
-                    q_alerts.put(("error", ["Nao encontrei asteroide com diametro > 10."]))
+                    q_alerts.put(("error", ["Não encontrei asteroide com diametro > 10."]))
                     conn.close()
                     return
                 id_internal = int(row[0])
@@ -2429,10 +2635,21 @@ def run_gui() -> None:
     def update_alert_tree(rows: list) -> None:
         for item in alert_tree.get_children():
             alert_tree.delete(item)
-        for row in rows:
+        for idx, row in enumerate(rows):
             data_gen = row[1]
             data_txt = data_gen.strftime("%Y-%m-%d %H:%M:%S") if hasattr(data_gen, "strftime") else str(data_gen)
-            alert_tree.insert("", "end", values=(row[0], data_txt, row[2], row[3], row[4], row[5]))
+            level_txt = str(row[3] or "").lower()
+            level_tag = ""
+            if "red" in level_txt or "vermelh" in level_txt:
+                level_tag = "level_red"
+            elif "orange" in level_txt or "laranj" in level_txt:
+                level_tag = "level_orange"
+            elif "yellow" in level_txt or "amarel" in level_txt:
+                level_tag = "level_yellow"
+            elif "green" in level_txt or "verd" in level_txt:
+                level_tag = "level_green"
+            extra_tags = (level_tag,) if level_tag else ()
+            insert_striped(alert_tree, (row[0], data_txt, row[2], row[3], row[4], row[5]), idx, extra_tags)
 
     last_high_id: dict = {"value": None}
     notify_running: dict = {"value": False}
@@ -2535,11 +2752,13 @@ def run_gui() -> None:
                 elif kind == "done":
                     log_gen(f"[OK] SQL gerado: {payload}")
                     gen_button.configure(state="normal")
-                    gen_status_var.set("Geracao concluida.")
+                    gen_status_var.set("Geração concluida.")
+                    gen_status_label.configure(style="TagOk.TLabel")
                 elif kind == "error":
                     log_gen(f"[ERRO] {payload}")
                     gen_button.configure(state="normal")
                     gen_status_var.set("Erro na geracao.")
+                    gen_status_label.configure(style="TagBad.TLabel")
         except queue.Empty:
             pass
         root.after(200, poll_gen_queue)
