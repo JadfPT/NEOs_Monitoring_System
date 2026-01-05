@@ -278,7 +278,8 @@ def normalize_row_keys(row: dict) -> dict:
 
 def get_next_id_internal(cur) -> int:
     cur.execute("SELECT ISNULL(MAX(id_internal), 0) FROM Asteroid;")
-    return int(cur.fetchone()[0]) + 1
+    row = cur.fetchone()
+    return int(row[0] if row else 0) + 1
 
 def load_existing_maps(cur) -> Tuple[Dict[str,int], Dict[int,int]]:
     neo_map: Dict[str,int] = {}
@@ -779,6 +780,7 @@ def run_gui() -> None:
     q_alerts: "queue.Queue[tuple[str, list]]" = queue.Queue()
     q_gen: "queue.Queue[tuple[str, str]]" = queue.Queue()
     q_monitor: "queue.Queue[tuple[str, object]]" = queue.Queue()
+    q_obs: "queue.Queue[tuple[str, Any]]" = queue.Queue()
     writer = QueueWriter(q)
 
     var_server = tk.StringVar(value="")
@@ -803,11 +805,13 @@ def run_gui() -> None:
     tab_conn = ttk.Frame(notebook)
     tab_load = ttk.Frame(notebook)
     tab_gen = ttk.Frame(notebook)
+    tab_obs = ttk.Frame(notebook)
     tab_monitor = ttk.Frame(notebook)
     tab_alert = ttk.Frame(notebook)
     notebook.add(tab_conn, text="Ligar")
     notebook.add(tab_gen, text="Gerar SQL")
     notebook.add(tab_load, text="Atualizar BD")
+    notebook.add(tab_obs, text="Observacoes")
     notebook.add(tab_monitor, text="Monitorizacao")
     notebook.add(tab_alert, text="Alertas")
     notebook.pack(fill="both", expand=True, padx=8, pady=8)
@@ -855,8 +859,9 @@ def run_gui() -> None:
     def set_tabs_enabled(connected: bool) -> None:
         state = "normal" if connected else "disabled"
         notebook.tab(2, state=state)  # Atualizar BD
-        notebook.tab(3, state=state)  # Monitorizacao
-        notebook.tab(4, state=state)  # Alertas
+        notebook.tab(3, state=state)  # Observacoes
+        notebook.tab(4, state=state)  # Monitorizacao
+        notebook.tab(5, state=state)  # Alertas
 
     def on_test_connection() -> None:
         cfg = cfg_from_fields()
@@ -1073,6 +1078,645 @@ def run_gui() -> None:
         threading.Thread(target=worker, daemon=True).start()
 
     gen_button.configure(command=run_generate_sql)
+
+    # --- Tab Observacoes ---
+    obs_status_var = tk.StringVar(value="Pronto.")
+    ttk.Label(tab_obs, textvariable=obs_status_var, style="Muted.TLabel").pack(anchor="w", padx=10, pady=(8, 0))
+
+    obs_notebook = ttk.Notebook(tab_obs)
+    obs_notebook.pack(fill="both", expand=True, padx=8, pady=8)
+
+    tab_center = ttk.Frame(obs_notebook)
+    tab_equipment = ttk.Frame(obs_notebook)
+    tab_software = ttk.Frame(obs_notebook)
+    tab_astronomer = ttk.Frame(obs_notebook)
+    tab_observation = ttk.Frame(obs_notebook)
+    obs_notebook.add(tab_center, text="Centros")
+    obs_notebook.add(tab_equipment, text="Equipamentos")
+    obs_notebook.add(tab_software, text="Software")
+    obs_notebook.add(tab_astronomer, text="Astronomos")
+    obs_notebook.add(tab_observation, text="Observacoes")
+
+    def parse_combo_id(value: str) -> Optional[int]:
+        if not value:
+            return None
+        try:
+            return int(value.split(" - ", 1)[0])
+        except ValueError:
+            return None
+
+    def parse_datetime_text(value: str) -> Optional[datetime]:
+        v = value.strip()
+        if not v:
+            return None
+        for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(v, fmt)
+            except ValueError:
+                pass
+        return None
+
+    # ---- Centros ----
+    var_center_name = tk.StringVar(value="")
+    var_center_location = tk.StringVar(value="")
+
+    center_form = ttk.LabelFrame(tab_center, text="Novo Centro")
+    center_form.pack(fill="x", padx=10, pady=10)
+    center_form.grid_columnconfigure(1, weight=1)
+    ttk.Label(center_form, text="Nome:").grid(row=0, column=0, sticky="w", padx=6, pady=4)
+    ttk.Entry(center_form, textvariable=var_center_name).grid(row=0, column=1, sticky="we", padx=6, pady=4)
+    ttk.Label(center_form, text="Localizacao:").grid(row=1, column=0, sticky="w", padx=6, pady=4)
+    ttk.Entry(center_form, textvariable=var_center_location).grid(row=1, column=1, sticky="we", padx=6, pady=4)
+
+    center_btns = ttk.Frame(center_form)
+    center_btns.grid(row=0, column=2, rowspan=2, padx=6, pady=4, sticky="n")
+
+    center_tree = ttk.Treeview(tab_center, columns=("id_center", "name", "location"), show="headings", height=10)
+    center_tree.heading("id_center", text="ID")
+    center_tree.heading("name", text="Nome")
+    center_tree.heading("location", text="Localizacao")
+    center_tree.column("id_center", width=80, anchor="w")
+    center_tree.column("name", width=240, anchor="w")
+    center_tree.column("location", width=240, anchor="w")
+    center_tree.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+    center_scroll = ttk.Scrollbar(tab_center, orient="vertical", command=center_tree.yview)
+    center_tree.configure(yscrollcommand=center_scroll.set)
+    center_scroll.place(in_=center_tree, relx=1.0, rely=0, relheight=1.0, anchor="ne")
+
+    # ---- Equipamentos ----
+    var_equipment_tipo = tk.StringVar(value="")
+    var_equipment_modelo = tk.StringVar(value="")
+    var_equipment_center = tk.StringVar(value="")
+
+    equipment_form = ttk.LabelFrame(tab_equipment, text="Novo Equipamento")
+    equipment_form.pack(fill="x", padx=10, pady=10)
+    equipment_form.grid_columnconfigure(1, weight=1)
+    ttk.Label(equipment_form, text="Tipo:").grid(row=0, column=0, sticky="w", padx=6, pady=4)
+    ttk.Entry(equipment_form, textvariable=var_equipment_tipo).grid(row=0, column=1, sticky="we", padx=6, pady=4)
+    ttk.Label(equipment_form, text="Modelo:").grid(row=1, column=0, sticky="w", padx=6, pady=4)
+    ttk.Entry(equipment_form, textvariable=var_equipment_modelo).grid(row=1, column=1, sticky="we", padx=6, pady=4)
+    ttk.Label(equipment_form, text="Centro:").grid(row=2, column=0, sticky="w", padx=6, pady=4)
+    equipment_center_combo = ttk.Combobox(equipment_form, textvariable=var_equipment_center, state="readonly", width=28)
+    equipment_center_combo.grid(row=2, column=1, sticky="w", padx=6, pady=4)
+
+    equipment_btns = ttk.Frame(equipment_form)
+    equipment_btns.grid(row=0, column=2, rowspan=3, padx=6, pady=4, sticky="n")
+
+    equipment_tree = ttk.Treeview(
+        tab_equipment,
+        columns=("id_equipment", "tipo", "modelo", "center"),
+        show="headings",
+        height=10,
+    )
+    equipment_tree.heading("id_equipment", text="ID")
+    equipment_tree.heading("tipo", text="Tipo")
+    equipment_tree.heading("modelo", text="Modelo")
+    equipment_tree.heading("center", text="Centro")
+    equipment_tree.column("id_equipment", width=80, anchor="w")
+    equipment_tree.column("tipo", width=160, anchor="w")
+    equipment_tree.column("modelo", width=200, anchor="w")
+    equipment_tree.column("center", width=220, anchor="w")
+    equipment_tree.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+    equipment_scroll = ttk.Scrollbar(tab_equipment, orient="vertical", command=equipment_tree.yview)
+    equipment_tree.configure(yscrollcommand=equipment_scroll.set)
+    equipment_scroll.place(in_=equipment_tree, relx=1.0, rely=0, relheight=1.0, anchor="ne")
+
+    # ---- Software ----
+    var_software_version = tk.StringVar(value="")
+
+    software_form = ttk.LabelFrame(tab_software, text="Novo Software")
+    software_form.pack(fill="x", padx=10, pady=10)
+    software_form.grid_columnconfigure(1, weight=1)
+    ttk.Label(software_form, text="Versao:").grid(row=0, column=0, sticky="w", padx=6, pady=4)
+    ttk.Entry(software_form, textvariable=var_software_version).grid(row=0, column=1, sticky="we", padx=6, pady=4)
+
+    software_btns = ttk.Frame(software_form)
+    software_btns.grid(row=0, column=2, padx=6, pady=4, sticky="n")
+
+    software_tree = ttk.Treeview(tab_software, columns=("id_software", "version"), show="headings", height=10)
+    software_tree.heading("id_software", text="ID")
+    software_tree.heading("version", text="Versao")
+    software_tree.column("id_software", width=80, anchor="w")
+    software_tree.column("version", width=260, anchor="w")
+    software_tree.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+    software_scroll = ttk.Scrollbar(tab_software, orient="vertical", command=software_tree.yview)
+    software_tree.configure(yscrollcommand=software_scroll.set)
+    software_scroll.place(in_=software_tree, relx=1.0, rely=0, relheight=1.0, anchor="ne")
+
+    # ---- Astronomos ----
+    var_astronomer_name = tk.StringVar(value="")
+    var_astronomer_aff = tk.StringVar(value="")
+
+    astronomer_form = ttk.LabelFrame(tab_astronomer, text="Novo Astronomo")
+    astronomer_form.pack(fill="x", padx=10, pady=10)
+    astronomer_form.grid_columnconfigure(1, weight=1)
+    ttk.Label(astronomer_form, text="Nome:").grid(row=0, column=0, sticky="w", padx=6, pady=4)
+    ttk.Entry(astronomer_form, textvariable=var_astronomer_name).grid(row=0, column=1, sticky="we", padx=6, pady=4)
+    ttk.Label(astronomer_form, text="Afiliacao:").grid(row=1, column=0, sticky="w", padx=6, pady=4)
+    ttk.Entry(astronomer_form, textvariable=var_astronomer_aff).grid(row=1, column=1, sticky="we", padx=6, pady=4)
+
+    astronomer_btns = ttk.Frame(astronomer_form)
+    astronomer_btns.grid(row=0, column=2, rowspan=2, padx=6, pady=4, sticky="n")
+
+    astronomer_tree = ttk.Treeview(
+        tab_astronomer,
+        columns=("id_astronomer", "name", "affiliation"),
+        show="headings",
+        height=10,
+    )
+    astronomer_tree.heading("id_astronomer", text="ID")
+    astronomer_tree.heading("name", text="Nome")
+    astronomer_tree.heading("affiliation", text="Afiliacao")
+    astronomer_tree.column("id_astronomer", width=80, anchor="w")
+    astronomer_tree.column("name", width=200, anchor="w")
+    astronomer_tree.column("affiliation", width=240, anchor="w")
+    astronomer_tree.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+    astronomer_scroll = ttk.Scrollbar(tab_astronomer, orient="vertical", command=astronomer_tree.yview)
+    astronomer_tree.configure(yscrollcommand=astronomer_scroll.set)
+    astronomer_scroll.place(in_=astronomer_tree, relx=1.0, rely=0, relheight=1.0, anchor="ne")
+
+    # ---- Observacoes ----
+    var_obs_date = tk.StringVar(value=datetime.now().strftime("%Y-%m-%d %H:%M"))
+    var_obs_duration = tk.StringVar(value="")
+    obs_mode_values = ["Optica", "Radar", "Infravermelho", "Fotometria", "Espectroscopia", "Tracking"]
+    var_obs_mode = tk.StringVar(value=obs_mode_values[0])
+    var_obs_asteroid = tk.StringVar(value="")
+    var_obs_astronomer = tk.StringVar(value="")
+    var_obs_software = tk.StringVar(value="")
+    var_obs_equipment = tk.StringVar(value="")
+
+    observation_form = ttk.LabelFrame(tab_observation, text="Nova Observacao")
+    observation_form.pack(fill="x", padx=10, pady=10)
+    observation_form.grid_columnconfigure(1, weight=1)
+
+    ttk.Label(observation_form, text="Data (YYYY-MM-DD HH:MM):").grid(row=0, column=0, sticky="w", padx=6, pady=4)
+    ttk.Entry(observation_form, textvariable=var_obs_date).grid(row=0, column=1, sticky="we", padx=6, pady=4)
+    ttk.Label(observation_form, text="Duracao (min):").grid(row=1, column=0, sticky="w", padx=6, pady=4)
+    ttk.Entry(observation_form, textvariable=var_obs_duration).grid(row=1, column=1, sticky="we", padx=6, pady=4)
+    ttk.Label(observation_form, text="Modo:").grid(row=2, column=0, sticky="w", padx=6, pady=4)
+    obs_mode_combo = ttk.Combobox(
+        observation_form,
+        textvariable=var_obs_mode,
+        state="readonly",
+        values=obs_mode_values,
+        width=28,
+    )
+    obs_mode_combo.grid(row=2, column=1, sticky="w", padx=6, pady=4)
+    ttk.Label(observation_form, text="ID Asteroide:").grid(row=3, column=0, sticky="w", padx=6, pady=4)
+    ttk.Entry(observation_form, textvariable=var_obs_asteroid).grid(row=3, column=1, sticky="we", padx=6, pady=4)
+    ttk.Label(observation_form, text="Astronomo:").grid(row=4, column=0, sticky="w", padx=6, pady=4)
+    obs_astronomer_combo = ttk.Combobox(observation_form, textvariable=var_obs_astronomer, state="readonly", width=28)
+    obs_astronomer_combo.grid(row=4, column=1, sticky="w", padx=6, pady=4)
+    ttk.Label(observation_form, text="Software:").grid(row=5, column=0, sticky="w", padx=6, pady=4)
+    obs_software_combo = ttk.Combobox(observation_form, textvariable=var_obs_software, state="readonly", width=28)
+    obs_software_combo.grid(row=5, column=1, sticky="w", padx=6, pady=4)
+    ttk.Label(observation_form, text="Equipamento:").grid(row=6, column=0, sticky="w", padx=6, pady=4)
+    obs_equipment_combo = ttk.Combobox(observation_form, textvariable=var_obs_equipment, state="readonly", width=28)
+    obs_equipment_combo.grid(row=6, column=1, sticky="w", padx=6, pady=4)
+
+    observation_btns = ttk.Frame(observation_form)
+    observation_btns.grid(row=0, column=2, rowspan=7, padx=6, pady=4, sticky="n")
+
+    observation_tree = ttk.Treeview(
+        tab_observation,
+        columns=("id_observation", "date", "duration", "mode", "asteroid", "astronomer", "software", "equipment", "center"),
+        show="headings",
+        height=10,
+    )
+    observation_tree.heading("id_observation", text="ID")
+    observation_tree.heading("date", text="Data")
+    observation_tree.heading("duration", text="Duracao")
+    observation_tree.heading("mode", text="Modo")
+    observation_tree.heading("asteroid", text="Asteroide")
+    observation_tree.heading("astronomer", text="Astronomo")
+    observation_tree.heading("software", text="Software")
+    observation_tree.heading("equipment", text="Equipamento")
+    observation_tree.heading("center", text="Centro")
+    observation_tree.column("id_observation", width=70, anchor="w")
+    observation_tree.column("date", width=150, anchor="w")
+    observation_tree.column("duration", width=80, anchor="w")
+    observation_tree.column("mode", width=120, anchor="w")
+    observation_tree.column("asteroid", width=200, anchor="w")
+    observation_tree.column("astronomer", width=160, anchor="w")
+    observation_tree.column("software", width=120, anchor="w")
+    observation_tree.column("equipment", width=180, anchor="w")
+    observation_tree.column("center", width=160, anchor="w")
+    observation_tree.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+    observation_scroll = ttk.Scrollbar(tab_observation, orient="vertical", command=observation_tree.yview)
+    observation_tree.configure(yscrollcommand=observation_scroll.set)
+    observation_scroll.place(in_=observation_tree, relx=1.0, rely=0, relheight=1.0, anchor="ne")
+    observation_scroll_x = ttk.Scrollbar(tab_observation, orient="horizontal", command=observation_tree.xview)
+    observation_tree.configure(xscrollcommand=observation_scroll_x.set)
+    observation_scroll_x.pack(fill="x", padx=10, pady=(0, 10))
+
+    def clear_obs_tree(tree: ttk.Treeview) -> None:
+        for item in tree.get_children():
+            tree.delete(item)
+
+    def refresh_centers() -> None:
+        cfg = cfg_from_fields()
+
+        def worker() -> None:
+            try:
+                conn = connect(cfg)
+                cur = conn.cursor()
+                cur.execute("SELECT id_center, name, location FROM Center_observation ORDER BY id_center;")
+                rows = cur.fetchall()
+                conn.close()
+                q_obs.put(("centers", rows))
+            except Exception as ex:
+                q_obs.put(("error", f"Centros: {ex}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def refresh_equipments() -> None:
+        cfg = cfg_from_fields()
+
+        def worker() -> None:
+            try:
+                conn = connect(cfg)
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT e.id_equipment, e.tipo, e.modelo, COALESCE(c.name, '')
+                    FROM Equipment e
+                    LEFT JOIN Center_observation c ON c.id_center = e.id_center
+                    ORDER BY e.id_equipment;
+                """)
+                rows = cur.fetchall()
+                conn.close()
+                q_obs.put(("equipments", rows))
+            except Exception as ex:
+                q_obs.put(("error", f"Equipamentos: {ex}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def refresh_software() -> None:
+        cfg = cfg_from_fields()
+
+        def worker() -> None:
+            try:
+                conn = connect(cfg)
+                cur = conn.cursor()
+                cur.execute("SELECT id_software, version FROM Software ORDER BY id_software;")
+                rows = cur.fetchall()
+                conn.close()
+                q_obs.put(("software", rows))
+            except Exception as ex:
+                q_obs.put(("error", f"Software: {ex}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def refresh_astronomers() -> None:
+        cfg = cfg_from_fields()
+
+        def worker() -> None:
+            try:
+                conn = connect(cfg)
+                cur = conn.cursor()
+                cur.execute("SELECT id_astronomer, name, affiliation FROM Astronomer ORDER BY id_astronomer;")
+                rows = cur.fetchall()
+                conn.close()
+                q_obs.put(("astronomers", rows))
+            except Exception as ex:
+                q_obs.put(("error", f"Astronomos: {ex}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def refresh_observations() -> None:
+        cfg = cfg_from_fields()
+
+        def worker() -> None:
+            try:
+                conn = connect(cfg)
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT
+                        o.id_observation,
+                        o.date,
+                        o.duration,
+                        o.mode,
+                        o.id_internal,
+                        COALESCE(a.full_name, ''),
+                        COALESCE(astr.name, ''),
+                        COALESCE(s.version, ''),
+                        COALESCE(e.tipo + ' ' + e.modelo, ''),
+                        COALESCE(c.name, '')
+                    FROM Observation o
+                    LEFT JOIN Asteroid a ON a.id_internal = o.id_internal
+                    LEFT JOIN Astronomer astr ON astr.id_astronomer = o.id_astronomer
+                    LEFT JOIN Software s ON s.id_software = o.id_software
+                    LEFT JOIN Equipment e ON e.id_equipment = o.id_equipment
+                    LEFT JOIN Center_observation c ON c.id_center = e.id_center
+                    ORDER BY o.date DESC;
+                """)
+                rows = cur.fetchall()
+                conn.close()
+                q_obs.put(("observations", rows))
+            except Exception as ex:
+                q_obs.put(("error", f"Observacoes: {ex}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def refresh_reference_lists() -> None:
+        cfg = cfg_from_fields()
+
+        def worker() -> None:
+            try:
+                conn = connect(cfg)
+                cur = conn.cursor()
+                cur.execute("SELECT id_center, name FROM Center_observation ORDER BY id_center;")
+                centers = cur.fetchall()
+                cur.execute("SELECT id_equipment, tipo, modelo FROM Equipment ORDER BY id_equipment;")
+                equipments = cur.fetchall()
+                cur.execute("SELECT id_software, version FROM Software ORDER BY id_software;")
+                softwares = cur.fetchall()
+                cur.execute("SELECT id_astronomer, name FROM Astronomer ORDER BY id_astronomer;")
+                astronomers = cur.fetchall()
+                conn.close()
+                q_obs.put(("refs", (centers, equipments, softwares, astronomers)))
+            except Exception as ex:
+                q_obs.put(("error", f"Listas: {ex}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def add_center() -> None:
+        name = var_center_name.get().strip()
+        location = var_center_location.get().strip()
+        if not name or not location:
+            messagebox.showwarning("Centro", "Preenche o nome e a localizacao.")
+            return
+        cfg = cfg_from_fields()
+
+        def worker() -> None:
+            try:
+                conn = connect(cfg)
+                cur = conn.cursor()
+                cur.execute("SELECT ISNULL(MAX(id_center), 0) + 1 FROM Center_observation;")
+                row = cur.fetchone()
+                new_id = int(row[0] if row else 1)
+                cur.execute(
+                    "INSERT INTO Center_observation (id_center, name, location) VALUES (?, ?, ?);",
+                    new_id,
+                    name,
+                    location,
+                )
+                conn.commit()
+                conn.close()
+                q_obs.put(("log", f"Centro criado (ID {new_id})."))
+                q_obs.put(("refresh", "centers"))
+                q_obs.put(("refresh_refs", None))
+            except Exception as ex:
+                q_obs.put(("error", f"Centro: {ex}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def add_equipment() -> None:
+        tipo = var_equipment_tipo.get().strip()
+        modelo = var_equipment_modelo.get().strip()
+        center_id = parse_combo_id(var_equipment_center.get())
+        if not tipo or not modelo or center_id is None:
+            messagebox.showwarning("Equipamento", "Preenche tipo, modelo e centro.")
+            return
+        cfg = cfg_from_fields()
+
+        def worker() -> None:
+            try:
+                conn = connect(cfg)
+                cur = conn.cursor()
+                cur.execute("SELECT ISNULL(MAX(id_equipment), 0) + 1 FROM Equipment;")
+                row = cur.fetchone()
+                new_id = int(row[0] if row else 1)
+                cur.execute(
+                    "INSERT INTO Equipment (id_equipment, tipo, modelo, id_center) VALUES (?, ?, ?, ?);",
+                    new_id,
+                    tipo,
+                    modelo,
+                    center_id,
+                )
+                conn.commit()
+                conn.close()
+                q_obs.put(("log", f"Equipamento criado (ID {new_id})."))
+                q_obs.put(("refresh", "equipments"))
+                q_obs.put(("refresh_refs", None))
+            except Exception as ex:
+                q_obs.put(("error", f"Equipamento: {ex}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def add_software() -> None:
+        version = var_software_version.get().strip()
+        if not version:
+            messagebox.showwarning("Software", "Preenche a versao.")
+            return
+        cfg = cfg_from_fields()
+
+        def worker() -> None:
+            try:
+                conn = connect(cfg)
+                cur = conn.cursor()
+                cur.execute("SELECT ISNULL(MAX(id_software), 0) + 1 FROM Software;")
+                row = cur.fetchone()
+                new_id = int(row[0] if row else 1)
+                cur.execute(
+                    "INSERT INTO Software (id_software, version) VALUES (?, ?);",
+                    new_id,
+                    version,
+                )
+                conn.commit()
+                conn.close()
+                q_obs.put(("log", f"Software criado (ID {new_id})."))
+                q_obs.put(("refresh", "software"))
+                q_obs.put(("refresh_refs", None))
+            except Exception as ex:
+                q_obs.put(("error", f"Software: {ex}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def add_astronomer() -> None:
+        name = var_astronomer_name.get().strip()
+        affiliation = var_astronomer_aff.get().strip()
+        if not name or not affiliation:
+            messagebox.showwarning("Astronomo", "Preenche nome e afiliacao.")
+            return
+        cfg = cfg_from_fields()
+
+        def worker() -> None:
+            try:
+                conn = connect(cfg)
+                cur = conn.cursor()
+                cur.execute("SELECT ISNULL(MAX(id_astronomer), 0) + 1 FROM Astronomer;")
+                row = cur.fetchone()
+                new_id = int(row[0] if row else 1)
+                cur.execute(
+                    "INSERT INTO Astronomer (id_astronomer, name, affiliation) VALUES (?, ?, ?);",
+                    new_id,
+                    name,
+                    affiliation,
+                )
+                conn.commit()
+                conn.close()
+                q_obs.put(("log", f"Astronomo criado (ID {new_id})."))
+                q_obs.put(("refresh", "astronomers"))
+                q_obs.put(("refresh_refs", None))
+            except Exception as ex:
+                q_obs.put(("error", f"Astronomo: {ex}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def add_observation() -> None:
+        date_val = parse_datetime_text(var_obs_date.get())
+        duration_val = parse_int(var_obs_duration.get())
+        mode_val = var_obs_mode.get().strip()
+        asteroid_id = parse_int(var_obs_asteroid.get())
+        astronomer_id = parse_combo_id(var_obs_astronomer.get())
+        software_id = parse_combo_id(var_obs_software.get())
+        equipment_id = parse_combo_id(var_obs_equipment.get())
+        if not date_val or duration_val is None or not mode_val or asteroid_id is None:
+            messagebox.showwarning("Observacao", "Preenche data, duracao, modo e ID do asteroide.")
+            return
+        if astronomer_id is None or software_id is None or equipment_id is None:
+            messagebox.showwarning("Observacao", "Seleciona astronomo, software e equipamento.")
+            return
+        cfg = cfg_from_fields()
+
+        def worker() -> None:
+            try:
+                conn = connect(cfg)
+                cur = conn.cursor()
+                cur.execute("SELECT ISNULL(MAX(id_observation), 0) + 1 FROM Observation;")
+                row = cur.fetchone()
+                new_id = int(row[0] if row else 1)
+                cur.execute(
+                    """
+                    INSERT INTO Observation (
+                        id_observation, date, duration, mode, id_internal, id_astronomer, id_software, id_equipment
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                    """,
+                    new_id,
+                    date_val,
+                    duration_val,
+                    mode_val,
+                    asteroid_id,
+                    astronomer_id,
+                    software_id,
+                    equipment_id,
+                )
+                conn.commit()
+                conn.close()
+                q_obs.put(("log", f"Observacao criada (ID {new_id})."))
+                q_obs.put(("refresh", "observations"))
+            except Exception as ex:
+                q_obs.put(("error", f"Observacao: {ex}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    ttk.Button(center_btns, text="Adicionar", command=add_center).grid(row=0, column=0, padx=4, pady=4, sticky="e")
+    ttk.Button(center_btns, text="Atualizar Lista", command=refresh_centers).grid(row=1, column=0, padx=4, pady=4, sticky="e")
+
+    ttk.Button(equipment_btns, text="Adicionar", command=add_equipment).grid(row=0, column=0, padx=4, pady=4, sticky="e")
+    ttk.Button(equipment_btns, text="Atualizar Lista", command=refresh_equipments).grid(row=1, column=0, padx=4, pady=4, sticky="e")
+    ttk.Button(equipment_btns, text="Carregar Centros", command=refresh_reference_lists).grid(row=2, column=0, padx=4, pady=4, sticky="e")
+
+    ttk.Button(software_btns, text="Adicionar", command=add_software).grid(row=0, column=0, padx=4, pady=4, sticky="e")
+    ttk.Button(software_btns, text="Atualizar Lista", command=refresh_software).grid(row=1, column=0, padx=4, pady=4, sticky="e")
+
+    ttk.Button(astronomer_btns, text="Adicionar", command=add_astronomer).grid(row=0, column=0, padx=4, pady=4, sticky="e")
+    ttk.Button(astronomer_btns, text="Atualizar Lista", command=refresh_astronomers).grid(row=1, column=0, padx=4, pady=4, sticky="e")
+
+    ttk.Button(observation_btns, text="Adicionar", command=add_observation).grid(row=0, column=0, padx=4, pady=4, sticky="e")
+    ttk.Button(observation_btns, text="Atualizar Lista", command=refresh_observations).grid(row=1, column=0, padx=4, pady=4, sticky="e")
+    ttk.Button(observation_btns, text="Carregar Listas", command=refresh_reference_lists).grid(row=2, column=0, padx=4, pady=4, sticky="e")
+
+    def poll_obs_queue() -> None:
+        try:
+            while True:
+                kind, payload = q_obs.get_nowait()
+                if kind == "centers":
+                    clear_obs_tree(center_tree)
+                    for row in cast(list[tuple[Any, ...]], payload):
+                        center_tree.insert("", "end", values=(row[0], row[1], row[2]))
+                elif kind == "equipments":
+                    clear_obs_tree(equipment_tree)
+                    for row in cast(list[tuple[Any, ...]], payload):
+                        equipment_tree.insert("", "end", values=(row[0], row[1], row[2], row[3]))
+                elif kind == "software":
+                    clear_obs_tree(software_tree)
+                    for row in cast(list[tuple[Any, ...]], payload):
+                        software_tree.insert("", "end", values=(row[0], row[1]))
+                elif kind == "astronomers":
+                    clear_obs_tree(astronomer_tree)
+                    for row in cast(list[tuple[Any, ...]], payload):
+                        astronomer_tree.insert("", "end", values=(row[0], row[1], row[2]))
+                elif kind == "observations":
+                    clear_obs_tree(observation_tree)
+                    for row in cast(list[tuple[Any, ...]], payload):
+                        date_val = row[1]
+                        date_txt = date_val.strftime("%Y-%m-%d %H:%M") if hasattr(date_val, "strftime") else str(date_val)
+                        asteroid_txt = row[5] if row[5] else f"ID {row[4]}"
+                        equipment_txt = row[8]
+                        observation_tree.insert(
+                            "",
+                            "end",
+                            values=(
+                                row[0],
+                                date_txt,
+                                row[2],
+                                row[3],
+                                asteroid_txt,
+                                row[6],
+                                row[7],
+                                equipment_txt,
+                                row[9],
+                            ),
+                        )
+                elif kind == "refs":
+                    centers, equipments, softwares, astronomers = cast(
+                        tuple[list[tuple[Any, ...]], list[tuple[Any, ...]], list[tuple[Any, ...]], list[tuple[Any, ...]]],
+                        payload,
+                    )
+                    center_values = [f"{row[0]} - {row[1]}" for row in centers]
+                    equipment_values = [f"{row[0]} - {row[1]} {row[2]}" for row in equipments]
+                    software_values = [f"{row[0]} - {row[1]}" for row in softwares]
+                    astronomer_values = [f"{row[0]} - {row[1]}" for row in astronomers]
+                    equipment_center_combo.configure(values=center_values)
+                    obs_equipment_combo.configure(values=equipment_values)
+                    obs_software_combo.configure(values=software_values)
+                    obs_astronomer_combo.configure(values=astronomer_values)
+                    if var_equipment_center.get() not in center_values:
+                        var_equipment_center.set(center_values[0] if center_values else "")
+                    if var_obs_equipment.get() not in equipment_values:
+                        var_obs_equipment.set(equipment_values[0] if equipment_values else "")
+                    if var_obs_software.get() not in software_values:
+                        var_obs_software.set(software_values[0] if software_values else "")
+                    if var_obs_astronomer.get() not in astronomer_values:
+                        var_obs_astronomer.set(astronomer_values[0] if astronomer_values else "")
+                elif kind == "refresh":
+                    if payload == "centers":
+                        refresh_centers()
+                    elif payload == "equipments":
+                        refresh_equipments()
+                    elif payload == "software":
+                        refresh_software()
+                    elif payload == "astronomers":
+                        refresh_astronomers()
+                    elif payload == "observations":
+                        refresh_observations()
+                elif kind == "refresh_refs":
+                    refresh_reference_lists()
+                elif kind == "log":
+                    obs_status_var.set(str(payload))
+                elif kind == "error":
+                    obs_status_var.set(str(payload))
+                    messagebox.showerror("Observacoes", str(payload))
+        except queue.Empty:
+            pass
+        root.after(200, poll_obs_queue)
 
     # --- Tab Monitorizacao ---
     monitor_canvas = tk.Canvas(tab_monitor, highlightthickness=0)
@@ -1539,7 +2183,8 @@ def run_gui() -> None:
                 id_internal = int(row[0])
 
                 cur.execute("SELECT ISNULL(MAX(id_ca), 0) + 1 FROM Close_Approach;")
-                id_ca = int(cur.fetchone()[0])
+                row = cur.fetchone()
+                id_ca = int(row[0] if row else 1)
                 cur.execute(
                     "INSERT INTO Close_Approach (id_ca, approach_date, rel_velocity_kms, dist_ld, id_internal) "
                     "VALUES (?, DATEADD(DAY, 3, CAST(GETDATE() AS date)), 12.3, 0.5, ?)",
@@ -1719,6 +2364,7 @@ def run_gui() -> None:
         root.after(200, poll_gen_queue)
 
     poll_queue()
+    poll_obs_queue()
     poll_alert_queue()
     schedule_notify()
     poll_gen_queue()
