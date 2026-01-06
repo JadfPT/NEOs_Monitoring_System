@@ -2,9 +2,18 @@ import csv
 import os
 from datetime import date, datetime, timedelta
 
-TEMPLATE_SQL = os.path.join("Base de Dados", "NEOs_database.sql")
-MERGED_CSV = os.path.join("Ficheiros .csv", "neo_mpcorb_merged_correct.csv")
-OUTPUT_SQL = os.path.join("Base de Dados", "NEOs_database_correct.sql")
+TEMPLATE_SQL = os.path.join("Base de Dados", "NEOs_database_template.sql")
+MERGED_CSV = os.path.join("Ficheiros .csv", "neo_mpcorb_final.csv")
+OUTPUT_SQL = os.path.join("Base de Dados", "NEOs_database_generated.sql")
+
+EXTRA_SQL_SCRIPTS = [
+    os.path.join("Queries", "Procedures_UDFs.sql"),
+    os.path.join("Queries", "insert_software_obs.sql"),
+    os.path.join("Queries", "insert_software_orbit.sql"),
+    os.path.join("Queries", "insert_observation.sql"),
+    os.path.join("Queries", "seed_close_approach_real.sql"),
+    os.path.join("Queries", "rebuild_alerts.sql"),
+]
 
 
 def detect_delimiter(line):
@@ -537,6 +546,20 @@ def read_text_with_bom(path):
     return data.decode("utf-8", errors="ignore")
 
 
+def _append_extra_scripts(out_lines):
+    base_dir = os.getcwd()
+    for rel_path in EXTRA_SQL_SCRIPTS:
+        script_path = os.path.join(base_dir, rel_path)
+        if not os.path.isfile(script_path):
+            continue
+        out_lines.append("")
+        out_lines.append(f"-- BEGIN EXTRA: {rel_path}")
+        for ln in read_text_with_bom(script_path).splitlines():
+            out_lines.append(ln.rstrip("\ufeff"))
+        out_lines.append(f"-- END EXTRA: {rel_path}")
+        out_lines.append("")
+
+
 def write_sql(template_path, output_path, class_lines, asteroid_lines, orbit_lines):
     lines = read_text_with_bom(template_path).splitlines()
 
@@ -605,6 +628,7 @@ def write_sql(template_path, output_path, class_lines, asteroid_lines, orbit_lin
         out_lines.extend(orbit_lines)
         found["orbit"] = True
 
+    _append_extra_scripts(out_lines)
     with open(output_path, "w", encoding="utf-8", newline="\n") as f:
         for ln in out_lines:
             f.write(ln + "\n")
