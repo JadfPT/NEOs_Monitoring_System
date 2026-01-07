@@ -1,8 +1,8 @@
 {
-  "server": "Windows\\SQLEXPRESS",
+  "server": "192.168.100.14",
   "port": "",
-  "user": "sa",
-  "password": "sa",
-  "database": "NEOs",
+  "user": "User_BD_PL2_06",
+  "password": "diubi:2025!BD!PL2_06",
+  "database": "BD_PL2_06",
   "notify_high": true
 }

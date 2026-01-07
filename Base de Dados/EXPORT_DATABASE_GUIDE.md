@@ -25,7 +25,7 @@ Este documento explica como exportar a base de dados do SQL Server para um fiche
 
 ### 3. No Object Explorer, localizar a base de dados
 
-Clique com o botão direito na base de dados **NEOs**
+Clique com o botão direito na base de dados **BD_PL2_06**
 
 ### 4. Gerar Scripts
 
@@ -96,7 +96,7 @@ git push
 3. Nome: `NEOs` (ou outro nome)
 4. Clique em **OK**
 5. Abra o ficheiro `NEOs_database.sql` no SSMS (**File** → **Open** → **File**)
-6. Na barra de ferramentas, selecione a base de dados `NEOs`
+6. Na barra de ferramentas, selecione a base de dados `BD_PL2_06`
 7. Clique em **Execute** (F5)
 8. ✅ Base de dados completa criada!
 
