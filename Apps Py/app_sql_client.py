@@ -30,13 +30,13 @@ DEFAULT_MERGED_HEADER = [
     "designation_full", "last_obs_date", "orbit_type", "is_neo"
 ]
 
-# ----------------- Config paths -----------------
+# Config paths
 DEFAULT_LOADER_CONFIG = "loader_config.json"
 DEFAULT_FINAL_CSV = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "Ficheiros .csv", "neo_mpcorb_final.csv")
 )
 
-# ----------------- Helpers -----------------
+# Helpers
 def save_loader_config(cfg: dict, path: str = DEFAULT_LOADER_CONFIG) -> None:
     with open(path, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2, ensure_ascii=False)
@@ -51,7 +51,6 @@ def load_loader_config(path: str = DEFAULT_LOADER_CONFIG) -> Optional[dict]:
         return None
 
 def build_conn_str(cfg: dict) -> str:
-    # SQL Auth (como tu estás a usar 'sa')
     server = cfg["server"].strip()
     port = cfg.get("port", "").strip()
     if port:
@@ -86,7 +85,7 @@ def test_connection(cfg: dict) -> bool:
         print(f"[ERRO] Falha na ligacao: {ex}")
         return False
 
-# ----------------- DB utility (same as before) -----------------
+# DB utility functions
 def table_exists(cur, name: str) -> bool:
     cur.execute("SELECT 1 FROM sys.tables WHERE name = ?", name)
     return cur.fetchone() is not None
@@ -133,7 +132,6 @@ def parse_date(x: str) -> Optional[date]:
     if x == "" or x.upper() == "NULL":
         return None
 
-    # aceita YYYYMMDD ou YYYYMMDD.xxx
     if len(x) >= 8 and x[:8].isdigit():
         try:
             return datetime.strptime(x[:8], "%Y%m%d").date()
@@ -245,7 +243,7 @@ def detect_delimiter(path: str, encoding: str) -> str:
         lines = [ln.rstrip("\n\r") for ln in f.readlines()[:5] if ln.strip()]
 
     if not lines:
-        return ";"  # default
+        return ";"
 
     first = lines[0]
 
@@ -340,7 +338,7 @@ def upsert_asteroid(cur, id_internal: int, neo_id: Optional[str], spkid: Optiona
              spkid)
         return "update"
 
-    # 2) Se não existe por spkid, mas já existe por neo_id (UNIQUE), atualiza esse
+    # 2) Se não existe por spkid, mas já existe por neo_id, atualiza esse
     cur.execute("SELECT id_internal FROM Asteroid WHERE neo_id = ?", neo_id)
     row = cur.fetchone()
     if row:
@@ -968,7 +966,7 @@ def run_gui() -> None:
 
     select_tab(0)
 
-    # --- Tab Ligar ---
+    # Tab Ligar
     conn_header = ttk.Frame(tab_conn)
     conn_header.pack(fill="x", padx=16, pady=(12, 4))
     ttk.Label(conn_header, text="Ligação", style="Section.TLabel").pack(side="left")
@@ -1109,7 +1107,7 @@ def run_gui() -> None:
         var_notify_high.set(bool(cfg.get("notify_high", False)))
         set_status("Configuração carregada.", True)
 
-    # --- Tab Atualizar BD ---
+    # Tab Atualizar BD
     load_header = ttk.Frame(tab_load)
     load_header.pack(fill="x", padx=16, pady=(12, 4))
     ttk.Label(load_header, text="Atualizar Base de Dados", style="Section.TLabel").pack(side="left")
@@ -1212,7 +1210,7 @@ def run_gui() -> None:
     scroll.pack(side="right", fill="y")
     output_text.configure(yscrollcommand=scroll.set)
 
-    # --- Tab Gerar SQL ---
+    # Tab Gerar SQL
     gen_header = ttk.Frame(tab_gen)
     gen_header.pack(fill="x", padx=16, pady=(12, 4))
     ttk.Label(gen_header, text="Gerar SQL", style="Section.TLabel").pack(side="left")
@@ -1319,7 +1317,7 @@ def run_gui() -> None:
 
     gen_button.configure(command=run_generate_sql)
 
-    # --- Tab Executar SQL ---
+    # Tab Executar SQL
     exec_header = ttk.Frame(tab_exec)
     exec_header.pack(fill="x", padx=16, pady=(12, 4))
     ttk.Label(exec_header, text="Executar Script SQL", style="Section.TLabel").pack(side="left")
@@ -1425,7 +1423,7 @@ def run_gui() -> None:
     exec_button = ttk.Button(exec_actions, text="Executar Script", command=run_sql_script, style="Accent.TButton")
     exec_button.grid(row=2, column=0, sticky="we", padx=10, pady=(6, 10))
 
-    # --- Tab Catálogo ---
+    # Tab Catálogo
     catalog_header = ttk.Frame(tab_catalog)
     catalog_header.pack(fill="x", padx=16, pady=(12, 6))
     ttk.Label(catalog_header, text="Catálogo", style="Section.TLabel").pack(side="left")
@@ -1452,7 +1450,7 @@ def run_gui() -> None:
 
     catalog_notebook.bind("<<NotebookTabChanged>>", on_catalog_tab_change)
 
-    # ---- Asteroides ----
+    # Asteroides
     var_ast_full_name = tk.StringVar(value="")
     var_ast_pdes = tk.StringVar(value="")
     var_ast_name = tk.StringVar(value="")
@@ -1554,7 +1552,7 @@ def run_gui() -> None:
     )
     ast_next_btn.pack(side="left")
 
-    # ---- Órbitas ----
+    # Órbitas
     var_orbit_id = tk.StringVar(value="")
     var_orbit_internal = tk.StringVar(value="")
     var_orbit_class = tk.StringVar(value="NEA")
@@ -1644,7 +1642,7 @@ def run_gui() -> None:
     )
     orbit_next_btn.pack(side="left")
 
-    # ---- Imagens ----
+    # Imagens
     var_img_url = tk.StringVar(value="")
     var_img_source = tk.StringVar(value="")
     var_img_date = tk.StringVar(value="")
@@ -1707,7 +1705,7 @@ def run_gui() -> None:
     images_tree.configure(xscrollcommand=images_scroll_x.set)
     images_scroll_x.pack(fill="x", padx=8, pady=(0, 8))
 
-    # --- Tab Observações ---
+    # Tab Observações
     obs_header = ttk.Frame(tab_obs)
     obs_header.pack(fill="x", padx=16, pady=(12, 6))
     ttk.Label(obs_header, text="Gestão Observacional", style="Section.TLabel").pack(side="left")
@@ -1749,7 +1747,7 @@ def run_gui() -> None:
                 pass
         return None
 
-    # ---- Centros ----
+    # Centros
     var_center_name = tk.StringVar(value="")
     var_center_location = tk.StringVar(value="")
 
@@ -1790,7 +1788,7 @@ def run_gui() -> None:
     center_tree.configure(xscrollcommand=center_scroll_x.set)
     center_scroll_x.pack(fill="x", padx=8, pady=(0, 8))
 
-    # ---- Equipamentos ----
+    # Equipamentos
     var_equipment_tipo = tk.StringVar(value="")
     var_equipment_modelo = tk.StringVar(value="")
     var_equipment_center = tk.StringVar(value="")
@@ -1842,7 +1840,7 @@ def run_gui() -> None:
     equipment_tree.configure(xscrollcommand=equipment_scroll_x.set)
     equipment_scroll_x.pack(fill="x", padx=8, pady=(0, 8))
 
-    # ---- Software ----
+    # Software
     var_software_version = tk.StringVar(value="")
 
     software_layout = ttk.Frame(tab_software)
@@ -1878,7 +1876,7 @@ def run_gui() -> None:
     software_tree.configure(xscrollcommand=software_scroll_x.set)
     software_scroll_x.pack(fill="x", padx=8, pady=(0, 8))
 
-    # ---- Astrónomos ----
+    # Astrónomos
     var_astronomer_name = tk.StringVar(value="")
     var_astronomer_aff = tk.StringVar(value="")
 
@@ -1924,7 +1922,7 @@ def run_gui() -> None:
     astronomer_tree.configure(xscrollcommand=astronomer_scroll_x.set)
     astronomer_scroll_x.pack(fill="x", padx=8, pady=(0, 8))
 
-    # ---- Observações ----
+    # Observações
     var_obs_date = tk.StringVar(value=datetime.now().strftime("%Y-%m-%d %H:%M"))
     var_obs_duration = tk.StringVar(value="")
     obs_mode_values = ["Optica", "Radar", "Infravermelho", "Fotometria", "Espectroscopia", "Tracking"]
@@ -2833,7 +2831,7 @@ def run_gui() -> None:
             pass
         root.after(200, poll_obs_queue)
 
-    # --- Tab Views ---
+    # Tab Views
     views_header = ttk.Frame(tab_views)
     views_header.pack(fill="x", padx=16, pady=(12, 4))
     ttk.Label(views_header, text="Views", style="Section.TLabel").pack(side="left")
@@ -2915,7 +2913,7 @@ def run_gui() -> None:
         row=0, column=3, sticky="e", padx=10, pady=8
     )
 
-    # --- Tab Monitorização ---
+    # Tab Monitorização
     monitor_header = ttk.Frame(tab_monitor)
     monitor_header.pack(fill="x", padx=16, pady=(12, 4))
     ttk.Label(monitor_header, text="Monitorização", style="Section.TLabel").pack(side="left")
@@ -3223,7 +3221,7 @@ def run_gui() -> None:
     discovery_canvas.bind("<Configure>", lambda _e: refresh_charts())
     poll_monitor_queue()
 
-    # --- Tab Alertas ---
+    # Tab Alertas
     alert_header = ttk.Frame(tab_alert)
     alert_header.pack(fill="x", padx=16, pady=(12, 4))
     ttk.Label(alert_header, text="Alertas", style="Section.TLabel").pack(side="left")

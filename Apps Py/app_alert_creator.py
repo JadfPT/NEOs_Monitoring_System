@@ -69,7 +69,7 @@ def main() -> None:
     if "clam" in style.theme_names():
         style.theme_use("clam")
 
-    # --- Connection frame ---
+    # Connection frame
     conn_frame = ttk.LabelFrame(root, text="Ligacao")
     conn_frame.pack(fill="x", padx=12, pady=10)
 
@@ -135,7 +135,7 @@ def main() -> None:
     ttk.Button(conn_frame, text="Guardar Config", command=on_save_cfg).grid(row=1, column=4, padx=6, pady=4)
     ttk.Button(conn_frame, text="Testar Ligacao", command=on_test).grid(row=2, column=4, padx=6, pady=4)
 
-    # --- Alert form ---
+    # Alert form
     form_frame = ttk.LabelFrame(root, text="Criar Alert")
     form_frame.pack(fill="x", padx=12, pady=(0, 10))
 
@@ -167,7 +167,7 @@ def main() -> None:
     ttk.Label(form_frame, text="Data Geracao").grid(row=3, column=0, sticky="w", padx=6, pady=4)
     ttk.Entry(form_frame, textvariable=var_data_gen, width=24).grid(row=3, column=1, sticky="w", padx=6, pady=4)
 
-    # --- Asteroid search ---
+    # Asteroid search
     search_frame = ttk.LabelFrame(root, text="Pesquisar Asteroide")
     search_frame.pack(fill="x", padx=12, pady=(0, 10))
 
