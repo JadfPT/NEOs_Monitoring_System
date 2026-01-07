@@ -123,7 +123,8 @@ def main() -> None:
             conn = connect(cfg)
             cur = conn.cursor()
             cur.execute("SELECT DB_NAME()")
-            name = cur.fetchone()[0]
+            row = cur.fetchone()
+            name = row[0] if row else ""
             cur.close()
             conn.close()
             messagebox.showinfo("Ligacao", f"OK: {name}")
@@ -268,7 +269,7 @@ def main() -> None:
             conn = connect(cfg)
             cur = conn.cursor()
             like = f"%{term}%"
-            params = [like, like, like, like]
+            params: list[object] = [like, like, like, like]
             sql = (
                 "SELECT TOP 200 id_internal, spkid, full_name, pdes, name, prefix, "
                 "neo_flag, pha_flag, diameter, absolute_magnitude, albedo, diameter_sigma, "
@@ -328,10 +329,13 @@ def main() -> None:
         try:
             conn = connect(cfg)
             cur = conn.cursor()
+            cur.execute("SELECT ISNULL(MAX(id_alert), 0) + 1 FROM Alert;")
+            row = cur.fetchone()
+            new_id = int(row[0] if row else 1)
             cur.execute(
                 "INSERT INTO Alert (id_alert, data_generation, criteria_trigger, id_internal, id_priority, id_level) "
-                "VALUES (NEXT VALUE FOR dbo.seq_alert_id, ?, ?, ?, ?, ?)",
-                data_gen, criteria, id_internal, priority_id, level_id,
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                new_id, data_gen, criteria, id_internal, priority_id, level_id,
             )
             conn.commit()
             cur.close()
@@ -352,18 +356,18 @@ def main() -> None:
     ttk.Button(form_frame, text="Simular Alertas", command=lambda: open_simulation_dialog()).grid(row=5, column=4, padx=6, pady=6)
 
     rules = {
-        "High: Close approach <1 LD in 7 days, diameter>10mm": (
-            "Close approach < 1 LD within 7 days (diameter>10mm)",
+        "High: Close approach <1 LD in 7 days, diameter>10m": (
+            "Close approach < 1 LD within 7 days (diameter>10m)",
             "1 - High",
             "4 - Critical",
         ),
         "High: PHA uncertain (diam>100, rms>0.8, moid_ld<20)": (
-            "PHA uncertain: diameter>10m0, rms>0.8, moid_ld<20",
+            "PHA uncertain: diameter>100m, rms>0.8, moid_ld<20",
             "1 - High",
             "3 - High",
         ),
         "Medium: New large asteroid (diam>500, last month, moid_ld<50)": (
-            "New large asteroid: diameter>50m0m, moid_ld<50, discovered last month",
+            "New large asteroid: diameter>500m, moid_ld<50, discovered last month",
             "2 - Medium",
             "2 - Medium",
         ),
@@ -438,7 +442,24 @@ def main() -> None:
                 conn = connect(cfg)
                 cur = conn.cursor()
                 logs = []
+                created = 0
 
+                def next_alert_id() -> int:
+                    cur.execute("SELECT ISNULL(MAX(id_alert), 0) + 1 FROM Alert;")
+                    row = cur.fetchone()
+                    return int(row[0] if row else 1)
+
+                def insert_alert(id_internal: int, criteria: str, priority: int, level: int) -> None:
+                    nonlocal created
+                    alert_id = next_alert_id()
+                    cur.execute(
+                        "INSERT INTO Alert (id_alert, data_generation, criteria_trigger, id_internal, id_priority, id_level) "
+                        "VALUES (?, SYSDATETIME(), ?, ?, ?, ?)",
+                        alert_id, criteria, id_internal, priority, level,
+                    )
+                    created += 1
+
+                base_id: Optional[int] = None
                 if "close_7d" in selected or "cluster_month" in selected:
                     cur.execute("""
                         SELECT TOP 1 id_internal
@@ -452,19 +473,31 @@ def main() -> None:
                     base_id = int(row[0])
 
                 if "close_7d" in selected:
+                    if base_id is None:
+                        raise RuntimeError("Nao foi possivel obter asteroide base para close_7d.")
                     cur.execute("SELECT ISNULL(MAX(id_ca), 0) + 1 FROM Close_Approach;")
-                    id_ca = int(cur.fetchone()[0])
+                    row = cur.fetchone()
+                    id_ca = int(row[0] if row else 1)
                     cur.execute(
                         "INSERT INTO Close_Approach (id_ca, approach_date, rel_velocity_kms, dist_ld, id_internal) "
                         "VALUES (?, DATEADD(DAY, 3, CAST(GETDATE() AS date)), 12.3, 0.5, ?)",
                         id_ca,
                         base_id,
                     )
+                    insert_alert(
+                        base_id,
+                        "Close approach < 1 LD within 7 days (date=+3d, dist_ld=0.5)",
+                        1,
+                        4,
+                    )
                     logs.append("Simulado: aproximacao <1 LD em 7 dias.")
 
                 if "cluster_month" in selected:
+                    if base_id is None:
+                        raise RuntimeError("Nao foi possivel obter asteroide base para cluster_month.")
                     cur.execute("SELECT ISNULL(MAX(id_ca), 0) FROM Close_Approach;")
-                    base_ca = int(cur.fetchone()[0])
+                    row = cur.fetchone()
+                    base_ca = int(row[0] if row else 0)
                     cur.execute("""
                         WITH nums AS (
                             SELECT 1 AS n UNION ALL SELECT 2 UNION ALL SELECT 3
@@ -479,6 +512,12 @@ def main() -> None:
                             ?
                         FROM nums;
                     """, base_ca, base_id)
+                    insert_alert(
+                        base_id,
+                        "Clustered close approaches <10 LD in month",
+                        3,
+                        1,
+                    )
                     logs.append("Simulado: cluster mensal >5 aproximacoes <10 LD.")
 
                 if "pha_uncertain" in selected:
@@ -495,6 +534,12 @@ def main() -> None:
                             SET rms = 0.9, moid_ld = 10
                             WHERE id_internal = ?;
                         """, int(row[0]))
+                        insert_alert(
+                            int(row[0]),
+                            "PHA uncertain: diameter>100m, rms>0.8, moid_ld<20",
+                            1,
+                            3,
+                        )
                         logs.append("Simulado: PHA incerto (rms>0.8, moid_ld<20).")
 
                 if "new_large" in selected:
@@ -512,6 +557,12 @@ def main() -> None:
                             SET moid_ld = 30
                             WHERE id_internal = ?;
                         """, int(row[0]))
+                        insert_alert(
+                            int(row[0]),
+                            "New large asteroid: diameter>500m, moid_ld<50, discovered last month",
+                            2,
+                            2,
+                        )
                         logs.append("Simulado: novo asteroide grande (ultimo mes).")
 
                 if "anomaly" in selected:
@@ -529,6 +580,12 @@ def main() -> None:
                             SET e = 0.85, i = 75
                             WHERE id_internal = ?;
                         """, int(row[0]))
+                        insert_alert(
+                            int(row[0]),
+                            "Anomaly: albedo>0.3 AND e>0.8 AND i>70 AND diameter>200m",
+                            3,
+                            1,
+                        )
                         logs.append("Simulado: anomalia (albedo/e/i/diametro).")
 
                 if "significant_change" in selected:
@@ -564,11 +621,21 @@ def main() -> None:
                             WHERE o.id_internal = ?
                             ORDER BY o.epoch DESC;
                         """, new_id, orb_id)
+                        insert_alert(
+                            orb_id,
+                            "Significant orbital change: |delta e|>0.05 OR |delta i|>2",
+                            2,
+                            2,
+                        )
                         logs.append("Simulado: mudanca orbital significativa (novo Orbit).")
 
                 conn.commit()
                 conn.close()
-                msg = "Simulacao concluida:\\n- " + "\\n- ".join(logs) if logs else "Nada foi simulado."
+                if logs:
+                    msg = "Simulacao concluida:\\n- " + "\\n- ".join(logs)
+                    msg += f"\\n\\nAlertas criados: {created}"
+                else:
+                    msg = "Nada foi simulado."
                 messagebox.showinfo("Simular", msg)
             except Exception as ex:
                 messagebox.showerror("Simular", f"Erro: {ex}")
