@@ -8,6 +8,7 @@ from contextlib import redirect_stdout
 from tkinter import filedialog
 import pyodbc
 from datetime import datetime, date, timedelta
+import time
 from typing import Optional, Dict, Tuple, Any, cast
 import tkinter as tk
 from tkinter import Tk
@@ -821,11 +822,29 @@ def run_gui() -> None:
     style.map("Treeview", background=[("selected", palette["accent_soft"])], foreground=[("selected", palette["ink"])])
     style.layout("Main.TNotebook.Tab", [])
 
+    stripe_even = palette["card"]
+    stripe_odd = "#f7f3ed"
+
+    def apply_tree_stripes(tree: ttk.Treeview) -> None:
+        tree.tag_configure("even", background=stripe_even)
+        tree.tag_configure("odd", background=stripe_odd)
+
+    def insert_striped(
+        tree: ttk.Treeview,
+        values: tuple[Any, ...],
+        idx: int,
+        extra_tags: tuple[str, ...] = (),
+    ) -> None:
+        tag = "even" if idx % 2 == 0 else "odd"
+        tags = (tag,) + extra_tags
+        tree.insert("", "end", values=values, tags=tags)
+
     q: "queue.Queue[str]" = queue.Queue()
     q_alerts: "queue.Queue[tuple[str, list]]" = queue.Queue()
     q_gen: "queue.Queue[tuple[str, str]]" = queue.Queue()
     q_monitor: "queue.Queue[tuple[str, object]]" = queue.Queue()
     q_obs: "queue.Queue[tuple[str, Any]]" = queue.Queue()
+    q_script: "queue.Queue[str]" = queue.Queue()
     writer = QueueWriter(q)
 
     var_server = tk.StringVar(value="")
@@ -845,6 +864,7 @@ def run_gui() -> None:
     var_template = tk.StringVar(value=template_default)
     var_gen_csv = tk.StringVar(value=csv_default)
     var_output = tk.StringVar(value=output_default)
+    var_sql_script = tk.StringVar(value="")
 
     header = ttk.Frame(root)
     header.pack(fill="x", padx=18, pady=(14, 6))
@@ -887,36 +907,58 @@ def run_gui() -> None:
     tab_conn = ttk.Frame(notebook)
     tab_load = ttk.Frame(notebook)
     tab_gen = ttk.Frame(notebook)
+    tab_exec = ttk.Frame(notebook)
+    tab_catalog = ttk.Frame(notebook)
     tab_obs = ttk.Frame(notebook)
     tab_monitor = ttk.Frame(notebook)
     tab_views = ttk.Frame(notebook)
     tab_alert = ttk.Frame(notebook)
     notebook.add(tab_conn, text="Ligar")
     notebook.add(tab_gen, text="Gerar SQL")
+    notebook.add(tab_exec, text="Executar SQL")
     notebook.add(tab_load, text="Atualizar BD")
-    notebook.add(tab_obs, text="Observações")
     notebook.add(tab_monitor, text="Monitorização")
-    notebook.add(tab_views, text="Views")
+    notebook.add(tab_catalog, text="Catálogo")
+    notebook.add(tab_obs, text="Observações")
     notebook.add(tab_alert, text="Alertas")
+    notebook.add(tab_views, text="Views")
     notebook.pack(fill="both", expand=True, padx=12, pady=12)
 
-    ttk.Label(sidebar, text="Navegacao", style="Header.TLabel").pack(anchor="w", padx=12, pady=(14, 6))
+    ttk.Label(sidebar, text="Navegação", style="Header.TLabel").pack(anchor="w", padx=12, pady=(14, 6))
     sidebar_status = ttk.Label(sidebar, textvariable=status_var, style="TagIdle.TLabel")
     sidebar_status.pack(anchor="w", padx=12, pady=(0, 10))
 
     nav_buttons: list[ttk.Button] = []
 
     def select_tab(index: int) -> None:
+        if str(nav_buttons[index].cget("state")) == "disabled":
+            return
         notebook.select(index)
         for i, btn in enumerate(nav_buttons):
-            btn.configure(style="NavActive.TButton" if i == index else "Nav.TButton")
+            state = str(btn.cget("state"))
+            if state == "disabled":
+                btn.configure(style="NavDisabled.TButton")
+            else:
+                btn.configure(style="NavActive.TButton" if i == index else "Nav.TButton")
 
-    for idx, label in enumerate(
-        ["Ligar", "Gerar SQL", "Atualizar BD", "Observações", "Monitorização", "Views", "Alertas"]
-    ):
+    nav_labels = [
+        "Ligar",
+        "Gerar SQL",
+        "Executar SQL",
+        "Atualizar BD",
+        "Monitorização",
+        "Catálogo",
+        "Observações",
+        "Alertas",
+        "Views",
+    ]
+    for idx, label in enumerate(nav_labels):
         btn = ttk.Button(sidebar, text=label, style="Nav.TButton", command=lambda i=idx: select_tab(i))
         btn.pack(fill="x", padx=10, pady=4)
         nav_buttons.append(btn)
+
+        if label == "Atualizar BD":
+            ttk.Separator(sidebar, orient="horizontal").pack(fill="x", padx=10, pady=8)
 
     ttk.Separator(sidebar, orient="horizontal").pack(fill="x", padx=10, pady=10)
     ttk.Label(sidebar, text="Legenda", style="Header.TLabel").pack(anchor="w", padx=12, pady=(0, 6))
@@ -989,16 +1031,21 @@ def run_gui() -> None:
 
     def set_tabs_enabled(connected: bool) -> None:
         state = "normal" if connected else "disabled"
-        notebook.tab(2, state=state)  # Atualizar BD
-        notebook.tab(3, state=state)  # Observações
+        notebook.tab(2, state="normal")  # Executar SQL
+        notebook.tab(3, state=state)  # Atualizar BD
         notebook.tab(4, state=state)  # Monitorização
-        notebook.tab(5, state=state)  # Views
-        notebook.tab(6, state=state)  # Alertas
+        notebook.tab(5, state=state)  # Catálogo
+        notebook.tab(6, state=state)  # Observações
+        notebook.tab(7, state=state)  # Alertas
+        notebook.tab(8, state=state)  # Views
         for i in range(2, len(nav_buttons)):
-            nav_buttons[i].configure(
-                state=state,
-                style="Nav.TButton" if connected else "NavDisabled.TButton",
-            )
+            if i == 2:
+                nav_buttons[i].configure(state="normal", style="Nav.TButton")
+            else:
+                nav_buttons[i].configure(
+                    state=state,
+                    style="Nav.TButton" if connected else "NavDisabled.TButton",
+                )
 
     def on_test_connection() -> None:
         cfg = cfg_from_fields()
@@ -1263,7 +1310,7 @@ def run_gui() -> None:
                 class_map, asteroids, orbits = gen_sql.build_data_from_csv(csv_path)
                 q_gen.put(("log", f"Classes: {len(class_map)} | Asteroides: {len(asteroids)} | Orbits: {len(orbits)}"))
                 class_lines, asteroid_lines, orbit_lines = gen_sql.build_insert_blocks(class_map, asteroids, orbits)
-                gen_sql.write_sql(template_path, output_path, class_lines, asteroid_lines, orbit_lines)
+                gen_sql.write_sql_chunks(template_path, gen_sql.OUTPUT_DIR, class_lines, asteroid_lines, orbit_lines)
                 q_gen.put(("done", output_path))
             except Exception as ex:
                 q_gen.put(("error", str(ex)))
@@ -1272,10 +1319,398 @@ def run_gui() -> None:
 
     gen_button.configure(command=run_generate_sql)
 
+    # --- Tab Executar SQL ---
+    exec_header = ttk.Frame(tab_exec)
+    exec_header.pack(fill="x", padx=16, pady=(12, 4))
+    ttk.Label(exec_header, text="Executar Script SQL", style="Section.TLabel").pack(side="left")
+    ttk.Label(exec_header, text="Executa ficheiros .sql em lotes (GO)", style="Muted.TLabel").pack(side="right")
+
+    exec_wrap = ttk.Frame(tab_exec)
+    exec_wrap.pack(fill="both", expand=True, padx=16, pady=(4, 12))
+    exec_wrap.columnconfigure(0, weight=2)
+    exec_wrap.columnconfigure(1, weight=1)
+
+    exec_card = ttk.LabelFrame(exec_wrap, text="Script SQL")
+    exec_card.grid(row=0, column=0, sticky="nsew", padx=(0, 12), pady=6)
+    exec_card.columnconfigure(1, weight=1)
+
+    ttk.Label(exec_card, text="Ficheiro .sql:").grid(row=0, column=0, sticky="w", padx=10, pady=8)
+    exec_entry = ttk.Entry(exec_card, textvariable=var_sql_script)
+    exec_entry.grid(row=0, column=1, sticky="we", padx=10, pady=8)
+
+    exec_actions = ttk.LabelFrame(exec_wrap, text="Operações")
+    exec_actions.grid(row=0, column=1, sticky="nsew", pady=6)
+    exec_actions.columnconfigure(0, weight=1)
+
+    exec_status_var = tk.StringVar(value="Pronto.")
+    exec_status_label = ttk.Label(exec_actions, textvariable=exec_status_var, style="TagIdle.TLabel")
+    exec_status_label.grid(row=0, column=0, sticky="w", padx=10, pady=(10, 6))
+    var_exec_master = tk.BooleanVar(value=False)
+    ttk.Checkbutton(exec_actions, text="Executar em master", variable=var_exec_master).grid(
+        row=1, column=0, sticky="w", padx=10, pady=(2, 4)
+    )
+
+    def browse_sql_script() -> None:
+        path = filedialog.askopenfilename(
+            title="Seleciona o script SQL",
+            filetypes=[("SQL files", "*.sql"), ("All files", "*.*")]
+        )
+        if path:
+            var_sql_script.set(path)
+
+    ttk.Button(exec_card, text="Escolher", command=browse_sql_script).grid(row=0, column=2, padx=10, pady=8)
+
+    exec_log_card = ttk.LabelFrame(tab_exec, text="Log de Execução")
+    exec_log_card.pack(fill="both", expand=True, padx=16, pady=(0, 12))
+    exec_log = tk.Text(exec_log_card, height=16, wrap="word")
+    exec_log.pack(fill="both", expand=True, padx=8, pady=8)
+    exec_log.configure(state="disabled", bg=palette["card"], fg=palette["ink"], insertbackground=palette["ink"], relief="flat")
+
+    def log_exec(msg: str) -> None:
+        exec_log.configure(state="normal")
+        exec_log.insert("end", msg + "\n")
+        exec_log.see("end")
+        exec_log.configure(state="disabled")
+
+    def run_sql_script() -> None:
+        cfg = cfg_from_fields()
+        if var_exec_master.get():
+            cfg["database"] = "master"
+        script_path = var_sql_script.get().strip()
+        if not script_path:
+            messagebox.showwarning("Script SQL", "Seleciona um ficheiro .sql.")
+            return
+        if not os.path.isfile(script_path):
+            messagebox.showerror("Script SQL", "Ficheiro .sql não existe.")
+            return
+
+        exec_button.configure(state="disabled")
+        exec_status_var.set("A executar...")
+        exec_status_label.configure(style="TagIdle.TLabel")
+        log_exec(f"[INFO] A executar: {script_path}")
+
+        def worker() -> None:
+            try:
+                conn = connect(cfg)
+                conn.autocommit = True
+                cur = conn.cursor()
+                encoding = detect_encoding(script_path)
+                batch_count = 0
+                start_ts = time.time()
+                with open(script_path, "r", encoding=encoding, errors="ignore") as f:
+                    buffer: list[str] = []
+                    for line in f:
+                        if line.strip().upper() == "GO":
+                            batch = "".join(buffer).strip()
+                            if batch:
+                                cur.execute(batch)
+                                batch_count += 1
+                                q_script.put(f"[INFO] Batch {batch_count} executado.")
+                            buffer = []
+                        else:
+                            buffer.append(line)
+                    tail = "".join(buffer).strip()
+                    if tail:
+                        cur.execute(tail)
+                        batch_count += 1
+                        q_script.put(f"[INFO] Batch {batch_count} executado.")
+                conn.close()
+                elapsed = time.time() - start_ts
+                q_script.put(f"[OK] Script executado com sucesso. Batches: {batch_count}. Tempo: {elapsed:.1f}s")
+            except Exception as ex:
+                q_script.put(f"[ERRO] {ex}")
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    exec_button = ttk.Button(exec_actions, text="Executar Script", command=run_sql_script, style="Accent.TButton")
+    exec_button.grid(row=2, column=0, sticky="we", padx=10, pady=(6, 10))
+
+    # --- Tab Catálogo ---
+    catalog_header = ttk.Frame(tab_catalog)
+    catalog_header.pack(fill="x", padx=16, pady=(12, 6))
+    ttk.Label(catalog_header, text="Catálogo", style="Section.TLabel").pack(side="left")
+    ttk.Label(catalog_header, text="Gestão de asteroides, órbitas e imagens", style="Muted.TLabel").pack(side="right")
+
+    catalog_notebook = ttk.Notebook(tab_catalog)
+    catalog_notebook.pack(fill="both", expand=True, padx=12, pady=8)
+
+    tab_asteroid = ttk.Frame(catalog_notebook)
+    tab_orbit = ttk.Frame(catalog_notebook)
+    tab_images = ttk.Frame(catalog_notebook)
+    catalog_notebook.add(tab_asteroid, text="Asteroides")
+    catalog_notebook.add(tab_orbit, text="Órbitas")
+    catalog_notebook.add(tab_images, text="Imagens")
+
+    def on_catalog_tab_change(_event: tk.Event) -> None:
+        current = catalog_notebook.select()
+        if current == str(tab_asteroid):
+            refresh_asteroids()
+        elif current == str(tab_orbit):
+            refresh_orbits()
+        elif current == str(tab_images):
+            refresh_images()
+
+    catalog_notebook.bind("<<NotebookTabChanged>>", on_catalog_tab_change)
+
+    # ---- Asteroides ----
+    var_ast_full_name = tk.StringVar(value="")
+    var_ast_pdes = tk.StringVar(value="")
+    var_ast_name = tk.StringVar(value="")
+    var_ast_prefix = tk.StringVar(value="")
+    var_ast_neo = tk.StringVar(value="N")
+    var_ast_pha = tk.StringVar(value="N")
+    var_ast_diameter = tk.StringVar(value="")
+    var_ast_abs_mag = tk.StringVar(value="")
+    var_ast_albedo = tk.StringVar(value="")
+    var_ast_sigma = tk.StringVar(value="")
+    var_ast_spkid = tk.StringVar(value="")
+    var_ast_neo_id = tk.StringVar(value="")
+    var_ast_page = tk.IntVar(value=1)
+    ast_has_more: dict = {"value": False}
+
+    asteroid_layout = ttk.Frame(tab_asteroid)
+    asteroid_layout.pack(fill="both", expand=True, padx=12, pady=12)
+    asteroid_layout.columnconfigure(0, weight=1)
+    asteroid_layout.columnconfigure(1, weight=2)
+
+    asteroid_form = ttk.LabelFrame(asteroid_layout, text="Novo Asteroide")
+    asteroid_form.grid(row=0, column=0, sticky="nsew", padx=(0, 12), pady=6)
+    asteroid_form.columnconfigure(1, weight=1)
+    ttk.Label(asteroid_form, text="Nome completo:").grid(row=0, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(asteroid_form, textvariable=var_ast_full_name).grid(row=0, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(asteroid_form, text="PDES:").grid(row=1, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(asteroid_form, textvariable=var_ast_pdes).grid(row=1, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(asteroid_form, text="Nome curto:").grid(row=2, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(asteroid_form, textvariable=var_ast_name).grid(row=2, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(asteroid_form, text="Prefixo:").grid(row=3, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(asteroid_form, textvariable=var_ast_prefix).grid(row=3, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(asteroid_form, text="NEO:").grid(row=4, column=0, sticky="w", padx=10, pady=8)
+    ttk.Combobox(asteroid_form, textvariable=var_ast_neo, values=["Y", "N"], state="readonly", width=6).grid(
+        row=4, column=1, sticky="w", padx=10, pady=8
+    )
+    ttk.Label(asteroid_form, text="PHA:").grid(row=5, column=0, sticky="w", padx=10, pady=8)
+    ttk.Combobox(asteroid_form, textvariable=var_ast_pha, values=["Y", "N"], state="readonly", width=6).grid(
+        row=5, column=1, sticky="w", padx=10, pady=8
+    )
+    ttk.Label(asteroid_form, text="Diâmetro:").grid(row=6, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(asteroid_form, textvariable=var_ast_diameter).grid(row=6, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(asteroid_form, text="Magnitude abs.:").grid(row=7, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(asteroid_form, textvariable=var_ast_abs_mag).grid(row=7, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(asteroid_form, text="Albedo:").grid(row=8, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(asteroid_form, textvariable=var_ast_albedo).grid(row=8, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(asteroid_form, text="Sigma diâmetro:").grid(row=9, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(asteroid_form, textvariable=var_ast_sigma).grid(row=9, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(asteroid_form, text="SPKID (opcional):").grid(row=10, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(asteroid_form, textvariable=var_ast_spkid).grid(row=10, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(asteroid_form, text="NEO ID (opcional):").grid(row=11, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(asteroid_form, textvariable=var_ast_neo_id).grid(row=11, column=1, sticky="we", padx=10, pady=8)
+
+    asteroid_btns = ttk.Frame(asteroid_form)
+    asteroid_btns.grid(row=12, column=0, columnspan=2, sticky="we", padx=10, pady=(6, 10))
+    asteroid_btns.columnconfigure(0, weight=1)
+    asteroid_btns.columnconfigure(1, weight=1)
+
+    asteroid_list = ttk.LabelFrame(asteroid_layout, text="Lista de Asteroides")
+    asteroid_list.grid(row=0, column=1, sticky="nsew", pady=6)
+    asteroid_tree = ttk.Treeview(
+        asteroid_list,
+        columns=("id_internal", "full_name", "neo_flag", "pha_flag", "diameter", "created_at"),
+        show="headings",
+        height=12,
+    )
+    apply_tree_stripes(asteroid_tree)
+    asteroid_tree.heading("id_internal", text="ID")
+    asteroid_tree.heading("full_name", text="Nome")
+    asteroid_tree.heading("neo_flag", text="NEO")
+    asteroid_tree.heading("pha_flag", text="PHA")
+    asteroid_tree.heading("diameter", text="Diâmetro")
+    asteroid_tree.heading("created_at", text="Criado em")
+    asteroid_tree.column("id_internal", width=70, anchor="w")
+    asteroid_tree.column("full_name", width=240, anchor="w")
+    asteroid_tree.column("neo_flag", width=60, anchor="w")
+    asteroid_tree.column("pha_flag", width=60, anchor="w")
+    asteroid_tree.column("diameter", width=90, anchor="w")
+    asteroid_tree.column("created_at", width=140, anchor="w")
+    asteroid_tree.pack(fill="both", expand=True, padx=8, pady=8)
+
+    asteroid_scroll = ttk.Scrollbar(asteroid_list, orient="vertical", command=asteroid_tree.yview)
+    asteroid_tree.configure(yscrollcommand=asteroid_scroll.set)
+    asteroid_scroll.place(in_=asteroid_tree, relx=1.0, rely=0, relheight=1.0, anchor="ne")
+
+    ast_pager = ttk.Frame(asteroid_list)
+    ast_pager.pack(fill="x", padx=8, pady=(0, 8))
+    ast_prev_btn = ttk.Button(
+        ast_pager,
+        text="◀ Anterior",
+        command=lambda: (var_ast_page.set(max(1, var_ast_page.get() - 1)), refresh_asteroids()),
+    )
+    ast_prev_btn.pack(side="left")
+    ast_page_label = ttk.Label(ast_pager, text="Página 1", style="Muted.TLabel")
+    ast_page_label.pack(side="left", padx=10)
+    ast_next_btn = ttk.Button(
+        ast_pager,
+        text="Seguinte ▶",
+        command=lambda: (var_ast_page.set(var_ast_page.get() + 1), refresh_asteroids()),
+    )
+    ast_next_btn.pack(side="left")
+
+    # ---- Órbitas ----
+    var_orbit_id = tk.StringVar(value="")
+    var_orbit_internal = tk.StringVar(value="")
+    var_orbit_class = tk.StringVar(value="NEA")
+    var_orbit_epoch = tk.StringVar(value="")
+    var_orbit_rms = tk.StringVar(value="")
+    var_orbit_moid_ld = tk.StringVar(value="")
+    var_orbit_e = tk.StringVar(value="")
+    var_orbit_a = tk.StringVar(value="")
+    var_orbit_q = tk.StringVar(value="")
+    var_orbit_i = tk.StringVar(value="")
+    var_orbit_om = tk.StringVar(value="")
+    var_orbit_w = tk.StringVar(value="")
+    var_orbit_ma = tk.StringVar(value="")
+    var_orbit_ad = tk.StringVar(value="")
+    var_orbit_n = tk.StringVar(value="")
+    var_orbit_moid = tk.StringVar(value="")
+    var_orbit_page = tk.IntVar(value=1)
+    orbit_has_more: dict = {"value": False}
+
+    orbit_layout = ttk.Frame(tab_orbit)
+    orbit_layout.pack(fill="both", expand=True, padx=12, pady=12)
+    orbit_layout.columnconfigure(0, weight=1)
+    orbit_layout.columnconfigure(1, weight=2)
+
+    orbit_form = ttk.LabelFrame(orbit_layout, text="Nova Órbita")
+    orbit_form.grid(row=0, column=0, sticky="nsew", padx=(0, 12), pady=6)
+    orbit_form.columnconfigure(1, weight=1)
+    ttk.Label(orbit_form, text="ID órbita:").grid(row=0, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(orbit_form, textvariable=var_orbit_id).grid(row=0, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(orbit_form, text="ID asteroide:").grid(row=1, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(orbit_form, textvariable=var_orbit_internal).grid(row=1, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(orbit_form, text="Classe:").grid(row=2, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(orbit_form, textvariable=var_orbit_class).grid(row=2, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(orbit_form, text="Epoch:").grid(row=3, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(orbit_form, textvariable=var_orbit_epoch).grid(row=3, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(orbit_form, text="RMS:").grid(row=4, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(orbit_form, textvariable=var_orbit_rms).grid(row=4, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(orbit_form, text="MOID (LD):").grid(row=5, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(orbit_form, textvariable=var_orbit_moid_ld).grid(row=5, column=1, sticky="we", padx=10, pady=8)
+
+    orbit_btns = ttk.Frame(orbit_form)
+    orbit_btns.grid(row=6, column=0, columnspan=2, sticky="we", padx=10, pady=(6, 10))
+    orbit_btns.columnconfigure(0, weight=1)
+    orbit_btns.columnconfigure(1, weight=1)
+
+    orbit_list = ttk.LabelFrame(orbit_layout, text="Lista de Órbitas")
+    orbit_list.grid(row=0, column=1, sticky="nsew", pady=6)
+    orbit_tree = ttk.Treeview(
+        orbit_list,
+        columns=("id_orbita", "id_internal", "class", "epoch", "rms", "moid_ld"),
+        show="headings",
+        height=12,
+    )
+    apply_tree_stripes(orbit_tree)
+    orbit_tree.heading("id_orbita", text="ID")
+    orbit_tree.heading("id_internal", text="Asteroide")
+    orbit_tree.heading("class", text="Classe")
+    orbit_tree.heading("epoch", text="Epoch")
+    orbit_tree.heading("rms", text="RMS")
+    orbit_tree.heading("moid_ld", text="MOID")
+    orbit_tree.column("id_orbita", width=120, anchor="w")
+    orbit_tree.column("id_internal", width=90, anchor="w")
+    orbit_tree.column("class", width=90, anchor="w")
+    orbit_tree.column("epoch", width=100, anchor="w")
+    orbit_tree.column("rms", width=80, anchor="w")
+    orbit_tree.column("moid_ld", width=90, anchor="w")
+    orbit_tree.pack(fill="both", expand=True, padx=8, pady=8)
+
+    orbit_scroll = ttk.Scrollbar(orbit_list, orient="vertical", command=orbit_tree.yview)
+    orbit_tree.configure(yscrollcommand=orbit_scroll.set)
+    orbit_scroll.place(in_=orbit_tree, relx=1.0, rely=0, relheight=1.0, anchor="ne")
+
+    orbit_pager = ttk.Frame(orbit_list)
+    orbit_pager.pack(fill="x", padx=8, pady=(0, 8))
+    orbit_prev_btn = ttk.Button(
+        orbit_pager,
+        text="◀ Anterior",
+        command=lambda: (var_orbit_page.set(max(1, var_orbit_page.get() - 1)), refresh_orbits()),
+    )
+    orbit_prev_btn.pack(side="left")
+    orbit_page_label = ttk.Label(orbit_pager, text="Página 1", style="Muted.TLabel")
+    orbit_page_label.pack(side="left", padx=10)
+    orbit_next_btn = ttk.Button(
+        orbit_pager,
+        text="Seguinte ▶",
+        command=lambda: (var_orbit_page.set(var_orbit_page.get() + 1), refresh_orbits()),
+    )
+    orbit_next_btn.pack(side="left")
+
+    # ---- Imagens ----
+    var_img_url = tk.StringVar(value="")
+    var_img_source = tk.StringVar(value="")
+    var_img_date = tk.StringVar(value="")
+    var_img_desc = tk.StringVar(value="")
+    var_img_asteroid = tk.StringVar(value="")
+
+    images_layout = ttk.Frame(tab_images)
+    images_layout.pack(fill="both", expand=True, padx=12, pady=12)
+    images_layout.columnconfigure(0, weight=1)
+    images_layout.columnconfigure(1, weight=2)
+
+    images_form = ttk.LabelFrame(images_layout, text="Nova Imagem")
+    images_form.grid(row=0, column=0, sticky="nsew", padx=(0, 12), pady=6)
+    images_form.columnconfigure(1, weight=1)
+    ttk.Label(images_form, text="URL da imagem:").grid(row=0, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(images_form, textvariable=var_img_url).grid(row=0, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(images_form, text="Fonte:").grid(row=1, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(images_form, textvariable=var_img_source).grid(row=1, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(images_form, text="Data captura (YYYY-MM-DD):").grid(row=2, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(images_form, textvariable=var_img_date).grid(row=2, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(images_form, text="Descrição:").grid(row=3, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(images_form, textvariable=var_img_desc).grid(row=3, column=1, sticky="we", padx=10, pady=8)
+    ttk.Label(images_form, text="ID Asteroide:").grid(row=4, column=0, sticky="w", padx=10, pady=8)
+    ttk.Entry(images_form, textvariable=var_img_asteroid).grid(row=4, column=1, sticky="we", padx=10, pady=8)
+
+    images_btns = ttk.Frame(images_form)
+    images_btns.grid(row=5, column=0, columnspan=2, sticky="we", padx=10, pady=(6, 10))
+    images_btns.columnconfigure(0, weight=1)
+    images_btns.columnconfigure(1, weight=1)
+
+    images_list = ttk.LabelFrame(images_layout, text="Lista de Imagens")
+    images_list.grid(row=0, column=1, sticky="nsew", pady=6)
+    images_tree = ttk.Treeview(
+        images_list,
+        columns=("id_image", "image_url", "source", "capture_date", "description", "asteroid", "id_internal"),
+        show="headings",
+        height=12,
+    )
+    apply_tree_stripes(images_tree)
+    images_tree.heading("id_image", text="ID")
+    images_tree.heading("image_url", text="URL")
+    images_tree.heading("source", text="Fonte")
+    images_tree.heading("capture_date", text="Data")
+    images_tree.heading("description", text="Descrição")
+    images_tree.heading("asteroid", text="Asteroide")
+    images_tree.heading("id_internal", text="ID Asteroide")
+    images_tree.column("id_image", width=60, anchor="w")
+    images_tree.column("image_url", width=260, anchor="w")
+    images_tree.column("source", width=120, anchor="w")
+    images_tree.column("capture_date", width=120, anchor="w")
+    images_tree.column("description", width=200, anchor="w")
+    images_tree.column("asteroid", width=160, anchor="w")
+    images_tree.column("id_internal", width=100, anchor="w")
+    images_tree.pack(fill="both", expand=True, padx=8, pady=8)
+
+    images_scroll = ttk.Scrollbar(images_list, orient="vertical", command=images_tree.yview)
+    images_tree.configure(yscrollcommand=images_scroll.set)
+    images_scroll.place(in_=images_tree, relx=1.0, rely=0, relheight=1.0, anchor="ne")
+    images_scroll_x = ttk.Scrollbar(images_list, orient="horizontal", command=images_tree.xview)
+    images_tree.configure(xscrollcommand=images_scroll_x.set)
+    images_scroll_x.pack(fill="x", padx=8, pady=(0, 8))
+
     # --- Tab Observações ---
     obs_header = ttk.Frame(tab_obs)
     obs_header.pack(fill="x", padx=16, pady=(12, 6))
-    ttk.Label(obs_header, text="Gestao Observacional", style="Section.TLabel").pack(side="left")
+    ttk.Label(obs_header, text="Gestão Observacional", style="Section.TLabel").pack(side="left")
     obs_actions = ttk.Frame(obs_header)
     obs_actions.pack(side="right")
     obs_status_var = tk.StringVar(value="Pronto.")
@@ -1313,23 +1748,6 @@ def run_gui() -> None:
             except ValueError:
                 pass
         return None
-
-    stripe_even = palette["card"]
-    stripe_odd = "#f7f3ed"
-
-    def apply_tree_stripes(tree: ttk.Treeview) -> None:
-        tree.tag_configure("even", background=stripe_even)
-        tree.tag_configure("odd", background=stripe_odd)
-
-    def insert_striped(
-        tree: ttk.Treeview,
-        values: tuple[Any, ...],
-        idx: int,
-        extra_tags: tuple[str, ...] = (),
-    ) -> None:
-        tag = "even" if idx % 2 == 0 else "odd"
-        tags = (tag,) + extra_tags
-        tree.insert("", "end", values=values, tags=tags)
 
     # ---- Centros ----
     var_center_name = tk.StringVar(value="")
@@ -1669,6 +2087,74 @@ def run_gui() -> None:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def refresh_asteroids() -> None:
+        cfg = cfg_from_fields()
+        page = max(1, int(var_ast_page.get() or 1))
+        page_size = 100
+        offset = (page - 1) * page_size
+        fetch_count = page_size + 1
+
+        def worker() -> None:
+            try:
+                conn = connect(cfg)
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT
+                        id_internal,
+                        full_name,
+                        neo_flag,
+                        pha_flag,
+                        diameter,
+                        created_at
+                    FROM vw_Asteroids_List
+                    ORDER BY created_at DESC, id_internal DESC
+                    OFFSET ? ROWS FETCH NEXT ? ROWS ONLY;
+                """, offset, fetch_count)
+                rows = cur.fetchall()
+                has_more = len(rows) > page_size
+                if has_more:
+                    rows = rows[:page_size]
+                conn.close()
+                q_obs.put(("asteroids", (rows, has_more, page)))
+            except Exception as ex:
+                q_obs.put(("error", f"Asteroides: {ex}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def refresh_orbits() -> None:
+        cfg = cfg_from_fields()
+        page = max(1, int(var_orbit_page.get() or 1))
+        page_size = 100
+        offset = (page - 1) * page_size
+        fetch_count = page_size + 1
+
+        def worker() -> None:
+            try:
+                conn = connect(cfg)
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT
+                        id_orbita,
+                        id_internal,
+                        class,
+                        epoch,
+                        rms,
+                        moid_ld
+                    FROM vw_Orbits_List
+                    ORDER BY epoch DESC, id_orbita DESC
+                    OFFSET ? ROWS FETCH NEXT ? ROWS ONLY;
+                """, offset, fetch_count)
+                rows = cur.fetchall()
+                has_more = len(rows) > page_size
+                if has_more:
+                    rows = rows[:page_size]
+                conn.close()
+                q_obs.put(("orbits", (rows, has_more, page)))
+            except Exception as ex:
+                q_obs.put(("error", f"Órbitas: {ex}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def refresh_observations(filter_text: Optional[str] = None) -> None:
         cfg = cfg_from_fields()
         text = (filter_text if filter_text is not None else var_obs_filter.get()).strip()
@@ -1715,6 +2201,33 @@ def run_gui() -> None:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def refresh_images() -> None:
+        cfg = cfg_from_fields()
+
+        def worker() -> None:
+            try:
+                conn = connect(cfg)
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT
+                        id_image,
+                        image_url,
+                        source,
+                        capture_date,
+                        description,
+                        asteroid_name,
+                        id_internal
+                    FROM vw_Asteroid_Images
+                    ORDER BY capture_date DESC, id_image DESC;
+                """)
+                rows = cur.fetchall()
+                conn.close()
+                q_obs.put(("images", rows))
+            except Exception as ex:
+                q_obs.put(("error", f"Imagens: {ex}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def refresh_reference_lists() -> None:
         cfg = cfg_from_fields()
 
@@ -1732,6 +2245,7 @@ def run_gui() -> None:
                 astronomers = cur.fetchall()
                 conn.close()
                 q_obs.put(("refs", (centers, equipments, softwares, astronomers)))
+                q_obs.put(("log", "Listas carregadas."))
             except Exception as ex:
                 q_obs.put(("error", f"Listas: {ex}"))
 
@@ -1871,6 +2385,155 @@ def run_gui() -> None:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def add_asteroid() -> None:
+        full_name = var_ast_full_name.get().strip()
+        pdes = var_ast_pdes.get().strip()
+        prefix = var_ast_prefix.get().strip()
+        abs_mag = parse_float(var_ast_abs_mag.get())
+        if not full_name or not pdes or not prefix or abs_mag is None:
+            messagebox.showwarning("Asteroide", "Preenche nome completo, PDES, prefixo e magnitude.")
+            return
+        cfg = cfg_from_fields()
+        neo_flag = var_ast_neo.get().strip() or "N"
+        pha_flag = var_ast_pha.get().strip() or "N"
+        name = var_ast_name.get().strip() or None
+        diameter = parse_float(var_ast_diameter.get())
+        albedo = parse_float(var_ast_albedo.get())
+        diameter_sigma = parse_float(var_ast_sigma.get())
+        spkid = parse_int(var_ast_spkid.get())
+        neo_id = var_ast_neo_id.get().strip() or None
+
+        def worker() -> None:
+            try:
+                conn = connect(cfg)
+                cur = conn.cursor()
+                cur.execute("SELECT ISNULL(MAX(id_internal), 0) + 1 FROM Asteroid;")
+                row = cur.fetchone()
+                new_id = int(row[0] if row else 1)
+                cur.execute(
+                    """
+                    INSERT INTO Asteroid (
+                        id_internal, spkid, full_name, pdes, name, prefix,
+                        neo_flag, pha_flag, diameter, absolute_magnitude, albedo, diameter_sigma,
+                        created_at, neo_id
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, SYSDATETIME(), ?);
+                    """,
+                    new_id,
+                    spkid,
+                    full_name,
+                    pdes,
+                    name,
+                    prefix,
+                    neo_flag,
+                    pha_flag,
+                    diameter,
+                    abs_mag,
+                    albedo,
+                    diameter_sigma,
+                    neo_id,
+                )
+                conn.commit()
+                conn.close()
+                q_obs.put(("log", f"Asteroide criado (ID {new_id})."))
+                q_obs.put(("refresh", "asteroids"))
+            except Exception as ex:
+                q_obs.put(("error", f"Asteroide: {ex}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def add_orbit() -> None:
+        orbit_id = var_orbit_id.get().strip()
+        id_internal = parse_int(var_orbit_internal.get())
+        if not orbit_id or id_internal is None:
+            messagebox.showwarning("Órbita", "Preenche ID da órbita e ID do asteroide.")
+            return
+        cfg = cfg_from_fields()
+        cls = var_orbit_class.get().strip() or "NEA"
+        epoch = parse_float(var_orbit_epoch.get()) or 0.0
+        rms = parse_float(var_orbit_rms.get()) or 0.0
+        moid_ld = parse_float(var_orbit_moid_ld.get()) or 0.0
+        e = parse_float(var_orbit_e.get()) or 0.0
+        a = parse_float(var_orbit_a.get()) or 0.0
+        q = parse_float(var_orbit_q.get()) or 0.0
+        inc = parse_float(var_orbit_i.get()) or 0.0
+        om = parse_float(var_orbit_om.get()) or 0.0
+        w = parse_float(var_orbit_w.get()) or 0.0
+        ma = parse_float(var_orbit_ma.get()) or 0.0
+        ad = parse_float(var_orbit_ad.get()) or 0.0
+        n = parse_float(var_orbit_n.get()) or 0.0
+        moid = parse_float(var_orbit_moid.get()) or 0.0
+        today = date.today()
+
+        def worker() -> None:
+            try:
+                conn = connect(cfg)
+                cur = conn.cursor()
+                cur.execute(
+                    """
+                    INSERT INTO Orbit (
+                        id_orbita, epoch, rms, moid_ld, epoch_mjd, epoch_cal,
+                        tp, tp_cal, per, per_y, equinox,
+                        orbit_uncertainty, condition_code,
+                        e, a, q, i, om, w, ma, ad, n, moid,
+                        sigma_e, sigma_a, sigma_q, sigma_i, sigma_n, sigma_ma, sigma_om, sigma_w, sigma_ad, sigma_tp, sigma_per,
+                        id_internal, class
+                    )
+                    VALUES (
+                        ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?,
+                        ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?
+                    );
+                    """,
+                    orbit_id,
+                    epoch,
+                    rms,
+                    moid_ld,
+                    None,
+                    today,
+                    0.0,
+                    today,
+                    0.0,
+                    0.0,
+                    "J2000",
+                    None,
+                    None,
+                    e,
+                    a,
+                    q,
+                    inc,
+                    om,
+                    w,
+                    ma,
+                    ad,
+                    n,
+                    moid,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    id_internal,
+                    cls,
+                )
+                conn.commit()
+                conn.close()
+                q_obs.put(("log", f"Órbita criada ({orbit_id})."))
+                q_obs.put(("refresh", "orbits"))
+            except Exception as ex:
+                q_obs.put(("error", f"Órbita: {ex}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def add_observation() -> None:
         date_val = parse_datetime_text(var_obs_date.get())
         duration_val = parse_int(var_obs_duration.get())
@@ -1880,10 +2543,10 @@ def run_gui() -> None:
         software_id = parse_combo_id(var_obs_software.get())
         equipment_id = parse_combo_id(var_obs_equipment.get())
         if not date_val or duration_val is None or not mode_val or asteroid_id is None:
-            messagebox.showwarning("Observação", "Preenche data, duracao, modo e ID do asteroide.")
+            messagebox.showwarning("Observação", "Preenche data, duração, modo e ID do asteroide.")
             return
         if astronomer_id is None or software_id is None or equipment_id is None:
-            messagebox.showwarning("Observação", "Seleciona astronomo, software e equipamento.")
+            messagebox.showwarning("Observação", "Seleciona astrónomo, software e equipamento.")
             return
         cfg = cfg_from_fields()
 
@@ -1919,6 +2582,47 @@ def run_gui() -> None:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def add_image() -> None:
+        url = var_img_url.get().strip()
+        source = var_img_source.get().strip()
+        capture_date = parse_date(var_img_date.get())
+        description = var_img_desc.get().strip() or None
+        asteroid_id = parse_int(var_img_asteroid.get())
+        if not url or not source or asteroid_id is None:
+            messagebox.showwarning("Imagem", "Preenche URL, fonte e ID do asteroide.")
+            return
+        cfg = cfg_from_fields()
+
+        def worker() -> None:
+            try:
+                conn = connect(cfg)
+                cur = conn.cursor()
+                cur.execute("SELECT ISNULL(MAX(id_image), 0) + 1 FROM Asteroid_Image;")
+                row = cur.fetchone()
+                new_id = int(row[0] if row else 1)
+                cur.execute(
+                    """
+                    INSERT INTO Asteroid_Image (
+                        id_image, image_url, source, capture_date, description, id_internal
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?);
+                    """,
+                    new_id,
+                    url,
+                    source,
+                    capture_date,
+                    description,
+                    asteroid_id,
+                )
+                conn.commit()
+                conn.close()
+                q_obs.put(("log", f"Imagem criada (ID {new_id})."))
+                q_obs.put(("refresh", "images"))
+            except Exception as ex:
+                q_obs.put(("error", f"Imagem: {ex}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
     ttk.Button(center_btns, text="Adicionar", command=add_center, style="Accent.TButton").grid(
         row=0, column=0, sticky="we", padx=4, pady=4
     )
@@ -1934,6 +2638,20 @@ def run_gui() -> None:
     )
     ttk.Button(equipment_btns, text="Carregar Centros", command=refresh_reference_lists).grid(
         row=1, column=0, columnspan=2, sticky="we", padx=4, pady=(2, 4)
+    )
+
+    ttk.Button(asteroid_btns, text="Adicionar", command=add_asteroid, style="Accent.TButton").grid(
+        row=0, column=0, sticky="we", padx=4, pady=4
+    )
+    ttk.Button(asteroid_btns, text="Atualizar Lista", command=lambda: (var_ast_page.set(1), refresh_asteroids())).grid(
+        row=0, column=1, sticky="we", padx=4, pady=4
+    )
+
+    ttk.Button(orbit_btns, text="Adicionar", command=add_orbit, style="Accent.TButton").grid(
+        row=0, column=0, sticky="we", padx=4, pady=4
+    )
+    ttk.Button(orbit_btns, text="Atualizar Lista", command=lambda: (var_orbit_page.set(1), refresh_orbits())).grid(
+        row=0, column=1, sticky="we", padx=4, pady=4
     )
 
     ttk.Button(software_btns, text="Adicionar", command=add_software, style="Accent.TButton").grid(
@@ -1960,6 +2678,13 @@ def run_gui() -> None:
         row=1, column=0, columnspan=2, sticky="we", padx=4, pady=(2, 4)
     )
 
+    ttk.Button(images_btns, text="Adicionar", command=add_image, style="Accent.TButton").grid(
+        row=0, column=0, sticky="we", padx=4, pady=4
+    )
+    ttk.Button(images_btns, text="Atualizar Lista", command=refresh_images).grid(
+        row=0, column=1, sticky="we", padx=4, pady=4
+    )
+
     def poll_obs_queue() -> None:
         try:
             while True:
@@ -1980,6 +2705,30 @@ def run_gui() -> None:
                     clear_obs_tree(astronomer_tree)
                     for idx, row in enumerate(cast(list[tuple[Any, ...]], payload)):
                         insert_striped(astronomer_tree, (row[0], row[1], row[2]), idx)
+                elif kind == "asteroids":
+                    rows, has_more, page = cast(tuple[list[tuple[Any, ...]], bool, int], payload)
+                    clear_obs_tree(asteroid_tree)
+                    for idx, row in enumerate(rows):
+                        created = row[5]
+                        created_txt = created.strftime("%Y-%m-%d") if hasattr(created, "strftime") else str(created)
+                        insert_striped(
+                            asteroid_tree,
+                            (row[0], row[1], row[2], row[3], row[4], created_txt),
+                            idx,
+                        )
+                    ast_has_more["value"] = bool(has_more)
+                    ast_page_label.configure(text=f"Página {page}")
+                    ast_prev_btn.configure(state="normal" if page > 1 else "disabled")
+                    ast_next_btn.configure(state="normal" if has_more else "disabled")
+                elif kind == "orbits":
+                    rows, has_more, page = cast(tuple[list[tuple[Any, ...]], bool, int], payload)
+                    clear_obs_tree(orbit_tree)
+                    for idx, row in enumerate(rows):
+                        insert_striped(orbit_tree, (row[0], row[1], row[2], row[3], row[4], row[5]), idx)
+                    orbit_has_more["value"] = bool(has_more)
+                    orbit_page_label.configure(text=f"Página {page}")
+                    orbit_prev_btn.configure(state="normal" if page > 1 else "disabled")
+                    orbit_next_btn.configure(state="normal" if has_more else "disabled")
                 elif kind == "observations":
                     clear_obs_tree(observation_tree)
                     for idx, row in enumerate(cast(list[tuple[Any, ...]], payload)):
@@ -1999,6 +2748,24 @@ def run_gui() -> None:
                                 row[7],
                                 equipment_txt,
                                 row[9],
+                            ),
+                            idx,
+                        )
+                elif kind == "images":
+                    clear_obs_tree(images_tree)
+                    for idx, row in enumerate(cast(list[tuple[Any, ...]], payload)):
+                        capture = row[3]
+                        capture_txt = capture.strftime("%Y-%m-%d") if hasattr(capture, "strftime") else (capture or "")
+                        insert_striped(
+                            images_tree,
+                            (
+                                row[0],
+                                row[1],
+                                row[2],
+                                capture_txt,
+                                row[4],
+                                row[5],
+                                row[6],
                             ),
                             idx,
                         )
@@ -2032,8 +2799,16 @@ def run_gui() -> None:
                         refresh_software()
                     elif payload == "astronomers":
                         refresh_astronomers()
+                    elif payload == "asteroids":
+                        var_ast_page.set(1)
+                        refresh_asteroids()
+                    elif payload == "orbits":
+                        var_orbit_page.set(1)
+                        refresh_orbits()
                     elif payload == "observations":
                         refresh_observations()
+                    elif payload == "images":
+                        refresh_images()
                 elif kind == "refresh_refs":
                     refresh_reference_lists()
                 elif kind == "log":
@@ -2062,7 +2837,7 @@ def run_gui() -> None:
     views_header = ttk.Frame(tab_views)
     views_header.pack(fill="x", padx=16, pady=(12, 4))
     ttk.Label(views_header, text="Views", style="Section.TLabel").pack(side="left")
-    ttk.Label(views_header, text="Consultas prontas para resultados rapidos", style="Muted.TLabel").pack(side="right")
+    ttk.Label(views_header, text="Consultas prontas para resultados rápidos", style="Muted.TLabel").pack(side="right")
 
     views_wrap = ttk.Frame(tab_views)
     views_wrap.pack(fill="both", expand=True, padx=16, pady=(4, 12))
@@ -2086,6 +2861,9 @@ def run_gui() -> None:
         "vw_Observations_Detail",
         "vw_Alerts_Detail",
         "vw_Software_Orbit",
+        "vw_Asteroid_Images",
+        "vw_Asteroids_List",
+        "vw_Orbits_List",
     ]
     var_view = tk.StringVar(value=view_names[0])
     ttk.Label(views_controls, text="View:").grid(row=0, column=0, sticky="w", padx=10, pady=8)
@@ -2729,11 +3507,31 @@ def run_gui() -> None:
             pass
         root.after(200, poll_gen_queue)
 
+    def poll_script_queue() -> None:
+        try:
+            while True:
+                msg = q_script.get_nowait()
+                log_exec(msg)
+                if msg.startswith("[OK]"):
+                    exec_button.configure(state="normal")
+                    exec_status_var.set("Execução concluída.")
+                    exec_status_label.configure(style="TagOk.TLabel")
+                elif msg.startswith("[ERRO]"):
+                    exec_button.configure(state="normal")
+                    exec_status_var.set("Erro na execução.")
+                    exec_status_label.configure(style="TagBad.TLabel")
+                elif msg.startswith("[INFO] Batch"):
+                    exec_status_var.set("A executar...")
+        except queue.Empty:
+            pass
+        root.after(200, poll_script_queue)
+
     poll_queue()
     poll_obs_queue()
     poll_alert_queue()
     schedule_notify()
     poll_gen_queue()
+    poll_script_queue()
     root.mainloop()
 
 
