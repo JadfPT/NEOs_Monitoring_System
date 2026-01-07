@@ -1,0 +1,9 @@
+Changed database context to 'BD_PL2_06'.
+Changed database context to 'BD_PL2_06'.
+Changed database context to 'BD_PL2_06'.
+Changed database context to 'BD_PL2_06'.
+Changed database context to 'BD_PL2_06'.
+Changed database context to 'BD_PL2_06'.
+Changed database context to 'BD_PL2_06'.
+Msg 208, Level 16, State 1, Server AULASDIDB\AULAS1, Line 22
+Invalid object name 'vw_CloseApproach_MonthlyClusters'.

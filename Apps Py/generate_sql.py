@@ -5,6 +5,8 @@ from datetime import date, datetime, timedelta
 TEMPLATE_SQL = os.path.join("Base de Dados", "NEOs_database_template.sql")
 MERGED_CSV = os.path.join("Ficheiros .csv", "neo_mpcorb_final.csv")
 OUTPUT_SQL = os.path.join("Base de Dados", "NEOs_database_generated.sql")
+OUTPUT_DIR = os.path.join("Base de Dados", "generated_chunks")
+CHUNK_SIZE = 5000
 
 EXTRA_SQL_SCRIPTS = [
     os.path.join("Queries", "Procedures_UDFs.sql"),
@@ -560,7 +562,21 @@ def _append_extra_scripts(out_lines):
         out_lines.append("")
 
 
-def write_sql(template_path, output_path, class_lines, asteroid_lines, orbit_lines):
+def _extract_use_header(lines):
+    for line in lines:
+        s = line.strip()
+        if s.upper().startswith("USE ["):
+            return s
+    return "USE [BD_PL2_06]"
+
+
+def _write_lines(path, lines):
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        for ln in lines:
+            f.write(ln + "\n")
+
+
+def write_sql_chunks(template_path, output_dir, class_lines, asteroid_lines, orbit_lines):
     lines = read_text_with_bom(template_path).splitlines()
 
     def strip_prefix(line):
@@ -602,36 +618,41 @@ def write_sql(template_path, output_path, class_lines, asteroid_lines, orbit_lin
 
         kind = insert_type(line)
         if kind == "class":
-            if not found["class"]:
-                out_lines.extend(class_lines)
-                found["class"] = True
+            found["class"] = True
             continue
         if kind == "asteroid":
-            if not found["asteroid"]:
-                out_lines.extend(asteroid_lines)
-                found["asteroid"] = True
+            found["asteroid"] = True
             continue
         if kind == "orbit":
-            if not found["orbit"]:
-                out_lines.extend(orbit_lines)
-                found["orbit"] = True
+            found["orbit"] = True
             continue
         out_lines.append(line)
 
-    if not found["class"]:
-        out_lines.extend(class_lines)
-        found["class"] = True
-    if not found["asteroid"]:
-        out_lines.extend(asteroid_lines)
-        found["asteroid"] = True
-    if not found["orbit"]:
-        out_lines.extend(orbit_lines)
-        found["orbit"] = True
+    os.makedirs(output_dir, exist_ok=True)
+    use_header = _extract_use_header(out_lines)
+    schema_path = os.path.join(output_dir, "00_schema.sql")
+    _write_lines(schema_path, out_lines)
 
-    _append_extra_scripts(out_lines)
-    with open(output_path, "w", encoding="utf-8", newline="\n") as f:
-        for ln in out_lines:
-            f.write(ln + "\n")
+    header = [use_header, "GO", "SET NOCOUNT ON;", ""]
+
+    class_path = os.path.join(output_dir, "01_class_orbital.sql")
+    _write_lines(class_path, header + class_lines)
+
+    def write_chunks(lines_src, prefix):
+        for i in range(0, len(lines_src), CHUNK_SIZE):
+            chunk = lines_src[i : i + CHUNK_SIZE]
+            idx = (i // CHUNK_SIZE) + 1
+            name = f"{prefix}_{idx:04d}.sql"
+            path = os.path.join(output_dir, name)
+            _write_lines(path, header + chunk)
+
+    write_chunks(asteroid_lines, "02_asteroid")
+    write_chunks(orbit_lines, "03_orbit")
+
+    extras_path = os.path.join(output_dir, "04_extras.sql")
+    extras_lines = header[:]
+    _append_extra_scripts(extras_lines)
+    _write_lines(extras_path, extras_lines)
 
 
 def main():
@@ -641,8 +662,8 @@ def main():
     print("Building INSERT blocks...")
     class_lines, asteroid_lines, orbit_lines = build_insert_blocks(class_map, asteroids, orbits)
     print("Writing SQL...")
-    write_sql(TEMPLATE_SQL, OUTPUT_SQL, class_lines, asteroid_lines, orbit_lines)
-    print(f"Done: {OUTPUT_SQL}")
+    write_sql_chunks(TEMPLATE_SQL, OUTPUT_DIR, class_lines, asteroid_lines, orbit_lines)
+    print(f"Done: {OUTPUT_DIR}")
 
 
 if __name__ == "__main__":

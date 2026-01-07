@@ -76,7 +76,7 @@ def main() -> None:
     fields = {
         "server": tk.StringVar(),
         "port": tk.StringVar(),
-        "database": tk.StringVar(value="NEOs"),
+        "database": tk.StringVar(value="BD_PL2_06"),
         "user": tk.StringVar(),
         "password": tk.StringVar(),
     }
